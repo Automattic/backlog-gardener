@@ -1,0 +1,2 @@
+[ "$3" = "1" ] || exit 0
+./scripts/sync-deps.sh "$1" "$2"

@@ -1,0 +1,10 @@
+node_modules
+.git
+.gardener-state
+.gardener-worktrees
+out
+dist
+coverage
+*.log
+.env
+.DS_Store

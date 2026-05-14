@@ -1,0 +1,35 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "action": {
+      "type": "string",
+      "enum": [
+        "debugging_plan_ready",
+        "needs_reproduction_info",
+        "needs_code_context",
+        "likely_external_or_upstream",
+        "not_reproducible_from_available_info"
+      ]
+    },
+    "confidence": { "type": "string", "enum": ["low", "medium", "high"] },
+    "subsystem": { "type": "string" },
+    "likelyFiles": { "type": "array", "items": { "type": "string" } },
+    "hypotheses": { "type": "array", "items": { "type": "string" } },
+    "suggestedReproSteps": { "type": "array", "items": { "type": "string" } },
+    "suggestedTests": { "type": "array", "items": { "type": "string" } },
+    "developerNotes": { "type": "string" },
+    "requiresHumanApproval": { "type": "boolean" }
+  },
+  "required": [
+    "action",
+    "confidence",
+    "subsystem",
+    "likelyFiles",
+    "hypotheses",
+    "suggestedReproSteps",
+    "suggestedTests",
+    "developerNotes",
+    "requiresHumanApproval"
+  ]
+}

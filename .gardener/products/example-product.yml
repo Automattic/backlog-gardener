@@ -1,0 +1,87 @@
+product:
+  name: Example Product
+  slug: example-product
+
+sources:
+  - type: github
+    host: github.com
+    repo: example-org/example-product
+    authEnv: GITHUB_TOKEN
+    isCustomerFacing: true
+    code:
+      checkout: true
+      branch: develop
+    fetch:
+      normal:
+        states: [open]
+      backfill:
+        states: [open, closed]
+        closedIssueMode: reference-only
+        closedSinceDays: 365
+      referenceSearch:
+        includeClosed: true
+
+  - type: wporg-reviews
+    pluginSlug: example-product
+    isCustomerFacing: true
+
+  - type: wporg-forum
+    pluginSlug: example-product
+    isCustomerFacing: true
+
+llm:
+  completion:
+    provider: openai
+    model: gpt-5.5
+    thinking: medium
+  roles:
+    triage:
+      provider: openai
+      model: gpt-5.5
+      thinking: low
+    evaluator:
+      provider: openai
+      model: gpt-5.5
+      thinking: high
+    verifier:
+      provider: openai
+      model: gpt-5.5
+      thinking: medium
+  embedding:
+    provider: openai
+    model: text-embedding-3-small
+
+attention:
+  recentMaintainerActivityDays: 14
+  staleMaintainerActivityDays: 90
+  protectedLabels:
+    - security
+    - release-blocker
+    - partner-escalation
+
+surfacing:
+  minConfidence: medium
+  minRecurrence: 1
+  labels:
+    - developer-ready
+    - worth-investigating
+
+budget:
+  dailyLimitUsd: 20
+  perRunLimitUsd: 10
+  backfillLimitUsd: 20
+  maxItemsPerRun: 250
+  maxCompletionCallsPerRun: 500
+  maxEmbeddingTextsPerRun: 5000
+  maxDedupPairsPerRun: 1000
+  onExhausted: stop-cleanly
+
+publishers:
+  reviewLane:
+    - name: local-markdown
+      outputDir: out/{product}/{timestamp}__{runId}
+    - name: slack
+      mode: channel
+      webhook_env: SLACK_WEBHOOK_URL
+      include_top_findings: 5
+  applyLane: []

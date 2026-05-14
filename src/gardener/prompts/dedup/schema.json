@@ -1,0 +1,10 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "verdict": { "type": "string", "enum": ["duplicate", "related", "unique"] },
+    "confidence": { "type": "string", "enum": ["low", "medium", "high"] },
+    "reason": { "type": "string" }
+  },
+  "required": ["verdict", "confidence", "reason"]
+}

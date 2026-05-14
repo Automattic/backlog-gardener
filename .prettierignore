@@ -1,0 +1,11 @@
+coverage/
+dist/
+node_modules/
+.gardener-state/
+.gardener-worktrees/
+out/
+docs/superpowers/specs/
+pnpm-lock.yaml
+.env
+.env.*
+!.env.example

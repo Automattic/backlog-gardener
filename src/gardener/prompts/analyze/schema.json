@@ -1,0 +1,54 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "decision",
+    "sourceType",
+    "shortTitle",
+    "summary",
+    "novelty",
+    "bestSolution",
+    "risks",
+    "confidence",
+    "evidence",
+    "relatedLinks",
+    "reason"
+  ],
+  "properties": {
+    "decision": { "enum": ["surface", "defer", "dedupe", "needs-info"] },
+    "sourceType": { "enum": ["github_issue", "wporg_review", "wporg_forum"] },
+    "shortTitle": { "type": "string", "minLength": 1, "maxLength": 80 },
+    "summary": { "type": "string" },
+    "novelty": { "enum": ["new", "recurring", "escalating", "longstanding"] },
+    "bestSolution": { "type": "string" },
+    "risks": { "type": "array", "items": { "type": "string" } },
+    "confidence": { "enum": ["high", "medium", "low"] },
+    "evidence": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["label", "detail", "sourceUrl", "quote"],
+        "properties": {
+          "label": { "type": "string" },
+          "detail": { "type": "string" },
+          "sourceUrl": { "type": "string" },
+          "quote": { "type": ["string", "null"] }
+        }
+      }
+    },
+    "relatedLinks": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["url", "title"],
+        "properties": {
+          "url": { "type": "string" },
+          "title": { "type": "string" }
+        }
+      }
+    },
+    "reason": { "type": "string" }
+  }
+}

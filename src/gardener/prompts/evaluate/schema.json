@@ -1,0 +1,33 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "action": {
+      "type": "string",
+      "enum": [
+        "accept_for_developer_attention",
+        "defer_because_already_active",
+        "dismiss_as_noise",
+        "request_more_info",
+        "merge_with_existing"
+      ]
+    },
+    "confidence": { "type": "string", "enum": ["low", "medium", "high"] },
+    "reason": { "type": "string" },
+    "developerSummary": { "type": "string" },
+    "recommendedNextStep": { "type": "string" },
+    "proposedExternalComment": { "type": ["string", "null"] },
+    "requiresHumanApproval": { "type": "boolean" },
+    "riskFlags": { "type": "array", "items": { "type": "string" } }
+  },
+  "required": [
+    "action",
+    "confidence",
+    "reason",
+    "developerSummary",
+    "recommendedNextStep",
+    "proposedExternalComment",
+    "requiresHumanApproval",
+    "riskFlags"
+  ]
+}
