@@ -104,6 +104,7 @@ Repository config can enable or narrow behaviour, but it cannot bypass app safet
 - app-owned checkouts stay under `.gardener-worktrees/`
 - app actions are limited by the GitHub App installation permissions and selected repositories
 - executable investigation recipes require `investigation.enabled: true` and a trusted maintainer command
+- recipe commands that obviously dump env/secrets or pipe remote scripts into a shell are rejected during config parsing
 
 ## Runtime overrides for local testing
 
