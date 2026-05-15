@@ -3,9 +3,10 @@
   "additionalProperties": false,
   "properties": {
     "summary": { "type": "string" },
-    "riskAssessment": { "type": "array", "items": { "type": "string" } },
+    "blockingRisks": { "type": "array", "items": { "type": "string" } },
+    "nonBlockingSuggestions": { "type": "array", "items": { "type": "string" } },
     "verification": { "type": "array", "items": { "type": "string" } },
     "questions": { "type": "array", "items": { "type": "string" } }
   },
-  "required": ["summary", "riskAssessment", "verification", "questions"]
+  "required": ["summary", "blockingRisks", "nonBlockingSuggestions", "verification", "questions"]
 }

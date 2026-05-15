@@ -14,7 +14,8 @@ import type { AppDecision } from './types.js';
 
 interface PrReviewOutput {
   summary: string;
-  riskAssessment: string[];
+  blockingRisks: string[];
+  nonBlockingSuggestions: string[];
   verification: string[];
   questions: string[];
 }
@@ -500,9 +501,16 @@ function renderStructuredPrReview(output: PrReviewOutput): string {
     '',
     output.summary.trim() || 'No summary generated.',
     '',
-    '## Risk assessment',
+    '## Blocking risks',
     '',
-    ...bulletOrFallback(output.riskAssessment, 'No specific risk identified from the provided diff.'),
+    ...bulletOrFallback(output.blockingRisks, 'No blocking risk identified from the provided diff.'),
+    '',
+    '## Non-blocking suggestions',
+    '',
+    ...bulletOrFallback(
+      output.nonBlockingSuggestions,
+      'No non-blocking suggestions identified from the provided diff.',
+    ),
     '',
     '## Suggested verification',
     '',
