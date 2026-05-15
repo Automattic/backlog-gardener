@@ -1,6 +1,20 @@
 import YAML from 'yaml';
 import { z } from 'zod';
 
+const SECRET_COMMAND_PATTERNS = [
+  /(^|[;&|\s])printenv($|[;&|\s])/i,
+  /(^|[;&|\s])env($|[;&|\s])/i,
+  /(^|[;&|\s])set($|[;&|\s])/i,
+  /(^|[;&|\s])cat\s+\.env\b/i,
+  /\.secrets\b/i,
+  /GARDENER_APP_PRIVATE_KEY|GARDENER_APP_WEBHOOK_SECRET|OPENAI_API_KEY|ANTHROPIC_API_KEY|GITHUB_TOKEN/i,
+  /\b(curl|wget)\b[^|;&]*\|\s*(sh|bash|zsh)\b/i,
+] as const;
+
+function safeInvestigationCommand(command: string): boolean {
+  return !SECRET_COMMAND_PATTERNS.some((pattern) => pattern.test(command));
+}
+
 export const GitHubAppConfigSchema = z
   .object({
     enabled: z.boolean().default(false),
@@ -77,7 +91,14 @@ export const GitHubAppConfigSchema = z
                 description: z.string().default(''),
                 timeoutSeconds: z.number().int().positive().max(1800).default(300),
                 maxOutputChars: z.number().int().positive().max(100_000).default(20_000),
-                commands: z.array(z.string().min(1)).min(1),
+                commands: z
+                  .array(
+                    z.string().min(1).refine(safeInvestigationCommand, {
+                      message:
+                        'investigation recipe commands must not dump env/secrets or pipe remote scripts into a shell',
+                    }),
+                  )
+                  .min(1),
               })
               .strict(),
           )
