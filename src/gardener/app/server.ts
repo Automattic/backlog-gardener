@@ -234,6 +234,26 @@ export function startGitHubAppServer(options: AppServerOptions): ReturnType<type
           });
           return;
         }
+        if (!args.config.investigation.enabled) {
+          const issueNumber = args.payload.issue?.number;
+          if (issueNumber) {
+            await args.loaded.client.createIssueComment({
+              owner: repo.owner,
+              repo: repo.repo,
+              issueNumber,
+              body: '🌱 **Backlog Gardener manual investigation**\n\nManual investigation recipes are disabled for this repository. Set `investigation.enabled: true` in `.github/gardener.yml` to allow trusted maintainer commands.',
+            });
+          }
+          state.completeJob(args.jobId, 'skipped');
+          writeStructuredLog({
+            event: 'github_manual_investigation_skipped',
+            deliveryId: args.deliveryId,
+            jobId: args.jobId,
+            repo: repo.fullName,
+            reason: 'investigation_disabled',
+          });
+          return;
+        }
         const requestedRecipe =
           command.recipeName === 'default' ? args.config.investigation.defaultRecipe : command.recipeName;
         if (!args.config.investigation.recipes[requestedRecipe]) {

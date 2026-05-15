@@ -65,6 +65,7 @@ actions:
   issueComments: true
 
 investigation:
+  enabled: true
   defaultRecipe: docs-check
   recipes:
     docs-check:
@@ -102,6 +103,7 @@ Repository config can enable or narrow behaviour, but it cannot bypass app safet
 - context size is capped before model calls
 - app-owned checkouts stay under `.gardener-worktrees/`
 - app actions are limited by the GitHub App installation permissions and selected repositories
+- executable investigation recipes require `investigation.enabled: true` and a trusted maintainer command
 
 ## Runtime overrides for local testing
 

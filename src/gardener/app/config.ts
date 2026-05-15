@@ -67,6 +67,7 @@ export const GitHubAppConfigSchema = z
       }),
     investigation: z
       .object({
+        enabled: z.boolean().default(false),
         defaultRecipe: z.string().min(1).default('default'),
         recipes: z
           .record(
@@ -83,7 +84,7 @@ export const GitHubAppConfigSchema = z
           .default({}),
       })
       .strict()
-      .default({ defaultRecipe: 'default', recipes: {} }),
+      .default({ enabled: false, defaultRecipe: 'default', recipes: {} }),
     prReviews: z
       .object({
         enabled: z.boolean().default(false),
