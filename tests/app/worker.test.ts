@@ -27,6 +27,34 @@ describe('app worker tick', () => {
     ]);
   });
 
+  it('can target a specific queued job', async () => {
+    const state = new InMemoryAppStateStore();
+    const first = state.enqueueJob({ deliveryId: 'delivery-1', eventName: 'issues', repo: 'o/r', payloadJson: '{}' });
+    const second = state.enqueueJob({
+      deliveryId: 'delivery-2',
+      eventName: 'issue_comment',
+      repo: 'o/r',
+      payloadJson: '{}',
+    });
+    const processed: string[] = [];
+
+    const result = await runAppWorkerTick({
+      state,
+      jobIds: [second.id],
+      processJob: async (job) => {
+        processed.push(job.id);
+        state.completeJob(job.id, 'completed');
+      },
+    });
+
+    expect(result).toEqual({ processed: 1, retried: 0, deadLettered: 0 });
+    expect(processed).toEqual([second.id]);
+    expect(state.listJobs()).toEqual([
+      expect.objectContaining({ id: first.id, status: 'queued', attempts: 0 }),
+      expect.objectContaining({ id: second.id, status: 'completed', attempts: 1 }),
+    ]);
+  });
+
   it('skips queued jobs scheduled for the future', async () => {
     const state = new InMemoryAppStateStore();
     const job = state.enqueueJob({ deliveryId: 'delivery-1', eventName: 'issues', repo: 'o/r', payloadJson: '{}' });
