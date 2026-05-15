@@ -7,6 +7,12 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import {
+  readInvestigationArtifact,
+  readInvestigationArtifacts,
+  renderInvestigationArtifact,
+  renderInvestigationArtifactList,
+} from './app/investigation-artifacts.js';
+import {
   buildGitHubAppManifest,
   buildGitHubOrgAppManifestUrl,
   convertGitHubAppManifestCode,
@@ -260,6 +266,70 @@ export function buildProgram(deps: CliDependencies = {}): Command {
         }
       }
       if (!result.ok) process.exitCode = 1;
+    });
+
+  const investigations = githubApp.command('investigations').description('inspect persisted GitHub App investigations');
+
+  investigations
+    .command('list')
+    .description('list persisted issue and PR investigation artifacts')
+    .option(
+      '--state <path>',
+      'GitHub App SQLite state path',
+      process.env.GARDENER_APP_STATE_PATH ?? '.gardener-state/app.db',
+    )
+    .option('--repo <owner/repo>', 'filter by repository')
+    .addOption(new Option('--subject <type>', 'filter by subject type').choices(['issue', 'pull_request']))
+    .option('--number <number>', 'filter by issue or pull request number', (value) => Number.parseInt(value, 10))
+    .addOption(
+      new Option('--status <status>', 'filter by investigation status').choices([
+        'comment_ready',
+        'review_ready',
+        'suppressed',
+        'no_output',
+      ]),
+    )
+    .option('--limit <count>', 'maximum number of artifacts to show', (value) => Number.parseInt(value, 10), 20)
+    .option('--json', 'emit machine-readable JSON')
+    .action(
+      (opts: {
+        state: string;
+        repo?: string;
+        subject?: 'issue' | 'pull_request';
+        number?: number;
+        status?: 'comment_ready' | 'review_ready' | 'suppressed' | 'no_output';
+        limit: number;
+        json?: boolean;
+      }) => {
+        const artifacts = readInvestigationArtifacts(opts.state, {
+          ...(opts.repo ? { repo: opts.repo } : {}),
+          ...(opts.subject ? { subjectType: opts.subject } : {}),
+          ...(opts.number !== undefined ? { subjectNumber: opts.number } : {}),
+          ...(opts.status ? { status: opts.status } : {}),
+          limit: opts.limit,
+        });
+        process.stdout.write(
+          opts.json ? `${JSON.stringify(artifacts, null, 2)}\n` : renderInvestigationArtifactList(artifacts),
+        );
+      },
+    );
+
+  investigations
+    .command('show')
+    .description('show one persisted investigation artifact')
+    .argument('<id>', 'investigation artifact id')
+    .option(
+      '--state <path>',
+      'GitHub App SQLite state path',
+      process.env.GARDENER_APP_STATE_PATH ?? '.gardener-state/app.db',
+    )
+    .option('--json', 'emit machine-readable JSON')
+    .action((id: string, opts: { state: string; json?: boolean }) => {
+      const artifact = readInvestigationArtifact(opts.state, id);
+      if (!artifact) throw new Error(`Investigation artifact not found: ${id}`);
+      process.stdout.write(
+        opts.json ? `${JSON.stringify(artifact, null, 2)}\n` : renderInvestigationArtifact(artifact),
+      );
     });
 
   const feedback = program.command('feedback').description('record or import human review feedback');
