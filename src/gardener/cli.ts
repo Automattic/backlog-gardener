@@ -352,6 +352,7 @@ export function buildProgram(deps: CliDependencies = {}): Command {
         'completed',
         'failed',
         'skipped',
+        'dead_letter',
       ]),
     )
     .option('--limit <count>', 'maximum number of jobs to show', (value) => Number.parseInt(value, 10), 20)
@@ -360,7 +361,7 @@ export function buildProgram(deps: CliDependencies = {}): Command {
       (opts: {
         state: string;
         repo?: string;
-        status?: 'queued' | 'processing' | 'completed' | 'failed' | 'skipped';
+        status?: 'queued' | 'processing' | 'completed' | 'failed' | 'skipped' | 'dead_letter';
         limit: number;
         json?: boolean;
       }) => {

@@ -81,8 +81,11 @@ export interface AppJobRecord {
   deliveryId: string;
   eventName: string;
   repo: string | null;
-  status: 'queued' | 'processing' | 'completed' | 'failed' | 'skipped';
+  status: 'queued' | 'processing' | 'completed' | 'failed' | 'skipped' | 'dead_letter';
   payloadJson: string;
+  attempts: number;
+  maxAttempts: number;
+  nextRunAt: string | null;
   createdAt: string;
   startedAt: string | null;
   completedAt: string | null;

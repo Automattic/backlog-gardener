@@ -24,7 +24,8 @@ export function renderAppJobList(jobs: AppJobRecord[]): string {
     .map((job) => {
       const repo = job.repo ?? 'unknown-repo';
       const error = job.error ? ` error=${singleLine(job.error)}` : '';
-      return `${job.id} ${job.status} ${job.eventName} ${repo} delivery=${job.deliveryId} created=${job.createdAt}${error}`;
+      const nextRun = job.nextRunAt ? ` nextRun=${job.nextRunAt}` : '';
+      return `${job.id} ${job.status} ${job.eventName} ${repo} attempts=${job.attempts}/${job.maxAttempts}${nextRun} delivery=${job.deliveryId} created=${job.createdAt}${error}`;
     })
     .join('\n')}\n`;
 }

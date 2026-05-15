@@ -21,10 +21,12 @@ describe('SqliteAppStateStore', () => {
     expect(
       state.enqueueJob({ deliveryId: 'delivery-1', eventName: 'issues.opened', repo: 'o/r', payloadJson: '{}' }).id,
     ).toBe(job.id);
-    expect(state.listJobs()[0]).toEqual(expect.objectContaining({ id: job.id, status: 'queued' }));
+    expect(state.listJobs()[0]).toEqual(
+      expect.objectContaining({ id: job.id, status: 'queued', attempts: 0, maxAttempts: 3 }),
+    );
     state.startJob(job.id);
     state.completeJob(job.id, 'completed');
-    expect(state.listJobs()[0]).toEqual(expect.objectContaining({ id: job.id, status: 'completed' }));
+    expect(state.listJobs()[0]).toEqual(expect.objectContaining({ id: job.id, status: 'completed', attempts: 1 }));
 
     const run = state.startRun({
       installationId: 1,

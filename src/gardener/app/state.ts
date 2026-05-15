@@ -68,7 +68,7 @@ export interface AppStateStore {
   enqueueJob(args: EnqueueJobArgs): AppJobRecord;
   listJobs(): AppJobRecord[];
   startJob(jobId: string): void;
-  completeJob(jobId: string, status: 'completed' | 'failed' | 'skipped', error?: string | null): void;
+  completeJob(jobId: string, status: 'completed' | 'failed' | 'skipped' | 'dead_letter', error?: string | null): void;
   startRun(args: StartRunArgs): AppRunRecord;
   completeRun(runId: string, status: 'completed' | 'failed' | 'skipped', error?: string | null): void;
   recordDecision(args: RecordDecisionArgs): DecisionRecord;
@@ -137,6 +137,9 @@ export class InMemoryAppStateStore implements AppStateStore {
       repo: args.repo ?? null,
       status: 'queued',
       payloadJson: args.payloadJson,
+      attempts: 0,
+      maxAttempts: 3,
+      nextRunAt: null,
       createdAt: nowIso(),
       startedAt: null,
       completedAt: null,
@@ -152,10 +155,15 @@ export class InMemoryAppStateStore implements AppStateStore {
 
   startJob(jobId: string): void {
     const record = this.jobs.get(jobId);
-    if (record) this.jobs.set(jobId, { ...record, status: 'processing', startedAt: nowIso() });
+    if (record)
+      this.jobs.set(jobId, { ...record, status: 'processing', attempts: record.attempts + 1, startedAt: nowIso() });
   }
 
-  completeJob(jobId: string, status: 'completed' | 'failed' | 'skipped', error: string | null = null): void {
+  completeJob(
+    jobId: string,
+    status: 'completed' | 'failed' | 'skipped' | 'dead_letter',
+    error: string | null = null,
+  ): void {
     const record = this.jobs.get(jobId);
     if (record) this.jobs.set(jobId, { ...record, status, completedAt: nowIso(), error });
   }
@@ -323,7 +331,10 @@ export class SqliteAppStateStore implements AppStateStore {
         created_at TEXT NOT NULL,
         started_at TEXT,
         completed_at TEXT,
-        error TEXT
+        error TEXT,
+        attempts INTEGER NOT NULL DEFAULT 0,
+        max_attempts INTEGER NOT NULL DEFAULT 3,
+        next_run_at TEXT
       );
       CREATE TABLE IF NOT EXISTS app_runs (
         id TEXT PRIMARY KEY,
@@ -403,6 +414,16 @@ export class SqliteAppStateStore implements AppStateStore {
         PRIMARY KEY (installation_id, repo, pull_request_number, head_sha)
       );
     `);
+    this.ensureColumn('app_jobs', 'attempts', 'INTEGER NOT NULL DEFAULT 0');
+    this.ensureColumn('app_jobs', 'max_attempts', 'INTEGER NOT NULL DEFAULT 3');
+    this.ensureColumn('app_jobs', 'next_run_at', 'TEXT');
+  }
+
+  private ensureColumn(table: string, column: string, definition: string): void {
+    const rows = this.db.prepare(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>;
+    if (!rows.some((row) => row.name === column)) {
+      this.db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
+    }
   }
 
   hasProcessedDelivery(deliveryId: string): boolean {
@@ -429,6 +450,9 @@ export class SqliteAppStateStore implements AppStateStore {
       repo: args.repo ?? null,
       status: 'queued',
       payloadJson: args.payloadJson,
+      attempts: 0,
+      maxAttempts: 3,
+      nextRunAt: null,
       createdAt: nowIso(),
       startedAt: null,
       completedAt: null,
@@ -436,7 +460,7 @@ export class SqliteAppStateStore implements AppStateStore {
     };
     this.db
       .prepare(
-        'INSERT INTO app_jobs (id, delivery_id, event_name, repo, status, payload_json, created_at, started_at, completed_at, error) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+        'INSERT INTO app_jobs (id, delivery_id, event_name, repo, status, payload_json, attempts, max_attempts, next_run_at, created_at, started_at, completed_at, error) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
       )
       .run(
         record.id,
@@ -445,6 +469,9 @@ export class SqliteAppStateStore implements AppStateStore {
         record.repo,
         record.status,
         record.payloadJson,
+        record.attempts,
+        record.maxAttempts,
+        record.nextRunAt,
         record.createdAt,
         record.startedAt,
         record.completedAt,
@@ -461,10 +488,16 @@ export class SqliteAppStateStore implements AppStateStore {
   }
 
   startJob(jobId: string): void {
-    this.db.prepare('UPDATE app_jobs SET status = ?, started_at = ? WHERE id = ?').run('processing', nowIso(), jobId);
+    this.db
+      .prepare('UPDATE app_jobs SET status = ?, attempts = attempts + 1, started_at = ? WHERE id = ?')
+      .run('processing', nowIso(), jobId);
   }
 
-  completeJob(jobId: string, status: 'completed' | 'failed' | 'skipped', error: string | null = null): void {
+  completeJob(
+    jobId: string,
+    status: 'completed' | 'failed' | 'skipped' | 'dead_letter',
+    error: string | null = null,
+  ): void {
     this.db
       .prepare('UPDATE app_jobs SET status = ?, completed_at = ?, error = ? WHERE id = ?')
       .run(status, nowIso(), error, jobId);
@@ -772,6 +805,9 @@ function jobFromRow(row: Record<string, unknown>): AppJobRecord {
     repo: row.repo === null ? null : String(row.repo),
     status: row.status as AppJobRecord['status'],
     payloadJson: String(row.payload_json),
+    attempts: row.attempts === null || row.attempts === undefined ? 0 : Number(row.attempts),
+    maxAttempts: row.max_attempts === null || row.max_attempts === undefined ? 3 : Number(row.max_attempts),
+    nextRunAt: row.next_run_at === null || row.next_run_at === undefined ? null : String(row.next_run_at),
     createdAt: String(row.created_at),
     startedAt: row.started_at === null ? null : String(row.started_at),
     completedAt: row.completed_at === null ? null : String(row.completed_at),
