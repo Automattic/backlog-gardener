@@ -11,6 +11,7 @@ import { ensureAppRepoCheckout } from './code.js';
 import { parseGitHubAppConfig, type GitHubAppConfig } from './config.js';
 import { fetchRepoGitHubAppConfig, GitHubRestAppClient } from './github-client.js';
 import { createInstallationToken, verifyGitHubWebhookSignature } from './github-app.js';
+import { renderInvestigationArtifactExplanation } from './investigation-artifacts.js';
 import { enrichDecisionWithInvestigationResult } from './investigation.js';
 import {
   fallbackManualInvestigationSynthesis,
@@ -221,22 +222,42 @@ export function startGitHubAppServer(options: AppServerOptions): ReturnType<type
         return;
       }
       try {
-        if (command.type === 'help' || command.type === 'list_recipes') {
+        if (command.type === 'help' || command.type === 'list_recipes' || command.type === 'explain') {
+          const subjectNumber = args.payload.issue!.number!;
+          const subjectType = args.payload.issue?.pull_request ? 'pull_request' : 'issue';
+          const latestArtifact =
+            state
+              .listInvestigationArtifacts()
+              .filter(
+                (artifact) =>
+                  artifact.repo === repo.fullName &&
+                  artifact.subjectType === subjectType &&
+                  artifact.subjectNumber === subjectNumber,
+              )
+              .sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0] ?? null;
           await args.loaded.client.createIssueComment({
             owner: repo.owner,
             repo: repo.repo,
-            issueNumber: args.payload.issue!.number!,
-            body: command.type === 'help' ? renderManualInvestigationHelp(args.config) : renderRecipeList(args.config),
+            issueNumber: subjectNumber,
+            body:
+              command.type === 'help'
+                ? renderManualInvestigationHelp(args.config)
+                : command.type === 'list_recipes'
+                  ? renderRecipeList(args.config)
+                  : renderInvestigationArtifactExplanation(latestArtifact),
           });
           state.completeJob(args.jobId, 'completed');
           writeStructuredLog({
             event:
               command.type === 'help'
                 ? 'github_manual_investigation_help_posted'
-                : 'github_manual_investigation_recipes_listed',
+                : command.type === 'list_recipes'
+                  ? 'github_manual_investigation_recipes_listed'
+                  : 'github_manual_investigation_explained',
             deliveryId: args.deliveryId,
             jobId: args.jobId,
             repo: repo.fullName,
+            ...(latestArtifact ? { investigationId: latestArtifact.id } : {}),
           });
           return;
         }

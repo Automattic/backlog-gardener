@@ -62,6 +62,49 @@ export function renderInvestigationArtifact(artifact: AppInvestigationArtifactRe
   );
 }
 
+export function renderInvestigationArtifactExplanation(artifact: AppInvestigationArtifactRecord | null): string {
+  if (!artifact) {
+    return [
+      '🌱 **Backlog Gardener explanation**',
+      '',
+      'I do not have a persisted investigation artifact for this thread yet.',
+    ].join('\n');
+  }
+  const subject =
+    artifact.subjectType === 'issue' ? `issue #${artifact.subjectNumber}` : `PR #${artifact.subjectNumber}`;
+  const details = artifact.details;
+  const synthesis = details.synthesis as
+    | { outcome?: string; confidence?: string; nextStep?: string; evidence?: string[] }
+    | undefined;
+  const evaluation = details.evaluation as
+    | { action?: string; reason?: string; recommendedNextStep?: string }
+    | undefined;
+  const lines = [
+    '🌱 **Backlog Gardener explanation**',
+    '',
+    `Latest artifact: \`${artifact.id}\` for ${subject}.`,
+    `Status: \`${artifact.status}\`; publication: \`${artifact.publicationStatus ?? 'none'}\`.`,
+  ];
+  if (artifact.suppressionReason) lines.push(`Suppression reason: \`${artifact.suppressionReason}\`.`);
+  if (synthesis) {
+    lines.push(
+      '',
+      '## Synthesized result',
+      `Outcome: **${synthesis.outcome ?? 'unknown'}** (${synthesis.confidence ?? 'unknown'} confidence)`,
+    );
+    if (synthesis.nextStep) lines.push(`Next step: ${synthesis.nextStep}`);
+    if (Array.isArray(synthesis.evidence) && synthesis.evidence.length > 0) {
+      lines.push('', 'Evidence:', ...synthesis.evidence.map((item) => `- ${item}`));
+    }
+  } else if (evaluation) {
+    lines.push('', '## Evaluation', `Action: \`${evaluation.action ?? 'unknown'}\``);
+    if (evaluation.reason) lines.push(`Reason: ${evaluation.reason}`);
+    if (evaluation.recommendedNextStep) lines.push(`Next step: ${evaluation.recommendedNextStep}`);
+  }
+  lines.push('', 'Use `pnpm gardener github-app investigations show ' + artifact.id + '` locally for full details.');
+  return lines.join('\n');
+}
+
 function filterArtifacts(
   artifacts: AppInvestigationArtifactRecord[],
   filters: InvestigationArtifactFilters,

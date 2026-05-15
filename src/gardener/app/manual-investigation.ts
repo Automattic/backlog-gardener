@@ -11,6 +11,7 @@ const TRUSTED_ASSOCIATIONS = new Set(['OWNER', 'MEMBER', 'COLLABORATOR']);
 
 export type ManualInvestigationCommand =
   | { type: 'help' }
+  | { type: 'explain' }
   | { type: 'list_recipes' }
   | { type: 'run_recipe'; recipeName: string };
 
@@ -53,6 +54,8 @@ export interface ManualInvestigationSynthesis {
 export function parseManualInvestigationCommand(body: string): ManualInvestigationCommand | null {
   const helpMatch = body.match(/^\s*@gardener\s+help\b/im);
   if (helpMatch) return { type: 'help' };
+  const explainMatch = body.match(/^\s*@gardener\s+explain\b/im);
+  if (explainMatch) return { type: 'explain' };
   const listMatch = body.match(/^\s*@gardener\s+list\s+recipes\b/im);
   if (listMatch) return { type: 'list_recipes' };
   const runMatch = body.match(/^\s*@gardener\s+(?:(investigate)|reproduce|run\s+recipe\s+([A-Za-z0-9_.-]+))\b/im);
@@ -189,6 +192,7 @@ export function renderManualInvestigationHelp(config: GitHubAppConfig): string {
     '- `@gardener reproduce` — alias for the default recipe',
     '- `@gardener run recipe <name>` — run a named recipe',
     '- `@gardener list recipes` — list configured recipes',
+    '- `@gardener explain` — summarize the latest persisted investigation for this thread',
     '- `@gardener help` — show this help',
     '',
     renderRecipeList(config),
