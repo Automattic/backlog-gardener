@@ -87,7 +87,13 @@ export async function runManualInvestigation(args: {
   const recipe = args.config.investigation.recipes[requestedRecipe];
   if (!recipe) throw new Error(`investigation recipe is not configured: ${requestedRecipe}`);
   const commands: ManualCommandResult[] = [];
+  const allowedPrefixes = args.config.investigation.allowedCommandPrefixes;
   for (const command of recipe.commands) {
+    if (!commandAllowedByPrefix(command, allowedPrefixes)) {
+      throw new Error(
+        `investigation recipe command is not allowed by investigation.allowedCommandPrefixes: ${command}`,
+      );
+    }
     commands.push(
       await runCommand({
         command,
@@ -125,8 +131,8 @@ async function runCommand(args: {
       command: args.command,
       exitCode: 0,
       timedOut: false,
-      stdout: truncate(stdout, args.maxOutputChars),
-      stderr: truncate(stderr, args.maxOutputChars),
+      stdout: truncate(redactSensitiveOutput(stdout), args.maxOutputChars),
+      stderr: truncate(redactSensitiveOutput(stderr), args.maxOutputChars),
     };
   } catch (error) {
     const err = error as NodeJS.ErrnoException & {
@@ -139,8 +145,8 @@ async function runCommand(args: {
       command: args.command,
       exitCode: typeof err.code === 'number' ? err.code : null,
       timedOut: Boolean(err.killed),
-      stdout: truncate(err.stdout ?? '', args.maxOutputChars),
-      stderr: truncate(err.stderr ?? err.message, args.maxOutputChars),
+      stdout: truncate(redactSensitiveOutput(err.stdout ?? ''), args.maxOutputChars),
+      stderr: truncate(redactSensitiveOutput(err.stderr ?? err.message), args.maxOutputChars),
     };
   }
 }
@@ -267,6 +273,23 @@ export function renderManualInvestigationComment(args: {
   }
   lines.push('', '<!-- backlog-gardener:summary:v1 -->');
   return lines.filter((line): line is string => line !== null).join('\n');
+}
+
+function commandAllowedByPrefix(command: string, allowedPrefixes: string[]): boolean {
+  if (allowedPrefixes.length === 0) return true;
+  const normalized = command.trim();
+  return allowedPrefixes.some((prefix) => normalized === prefix || normalized.startsWith(`${prefix} `));
+}
+
+export function redactSensitiveOutput(output: string): string {
+  return output
+    .replace(
+      /(OPENAI_API_KEY|ANTHROPIC_API_KEY|GITHUB_TOKEN|GARDENER_APP_PRIVATE_KEY|GARDENER_APP_WEBHOOK_SECRET)=\S+/gi,
+      '$1=[REDACTED]',
+    )
+    .replace(/(sk-[A-Za-z0-9_-]{12,})/g, '[REDACTED_OPENAI_KEY]')
+    .replace(/(gh[pousr]_[A-Za-z0-9_]{12,})/g, '[REDACTED_GITHUB_TOKEN]')
+    .replace(/-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?-----END [A-Z ]*PRIVATE KEY-----/g, '[REDACTED_PRIVATE_KEY]');
 }
 
 function renderCommandResultsForPrompt(commands: ManualCommandResult[]): string {

@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 
 import { parseGitHubAppConfig } from '../../src/gardener/app/config.js';
 import {
+  redactSensitiveOutput,
   manualInvestigationCommandAllowed,
   parseManualInvestigationCommand,
   renderManualInvestigationComment,
@@ -43,6 +44,15 @@ afterEach(async () => {
 });
 
 describe('manual investigation commands', () => {
+  it('redacts sensitive command output patterns', () => {
+    expect(redactSensitiveOutput('OPENAI_API_KEY=sk-abc1234567890 GITHUB_TOKEN=ghp_abc1234567890abc')).toContain(
+      'OPENAI_API_KEY=[REDACTED]',
+    );
+    expect(redactSensitiveOutput('-----BEGIN PRIVATE KEY-----\nsecret\n-----END PRIVATE KEY-----')).toBe(
+      '[REDACTED_PRIVATE_KEY]',
+    );
+  });
+
   it('parses supported commands', () => {
     expect(parseManualInvestigationCommand('@gardener help')).toEqual({ type: 'help' });
     expect(parseManualInvestigationCommand('@gardener explain')).toEqual({ type: 'explain' });
@@ -155,6 +165,8 @@ investigation:
       },
       config: parseGitHubAppConfig(`
 investigation:
+  allowedCommandPrefixes:
+    - node
   recipes:
     docs-check:
       commands:
@@ -185,5 +197,29 @@ investigation:
     expect(body).toContain('Conclusion: **passed** (high confidence)');
     expect(body).toContain('The validation command exited successfully.');
     expect(body).toContain('node -e');
+  });
+
+  it('rejects commands outside configured allowed prefixes', async () => {
+    await expect(
+      runManualInvestigation({
+        payload: {
+          action: 'created',
+          issue: { number: 12 },
+          comment: { body: '@gardener run recipe docs-check', author_association: 'OWNER' },
+        },
+        config: parseGitHubAppConfig(`
+investigation:
+  allowedCommandPrefixes:
+    - pnpm
+  recipes:
+    docs-check:
+      commands:
+        - node -e "console.log(42)"
+`),
+        repo: { installationId: 1, owner: 'o', repo: 'r', fullName: 'o/r' },
+        checkoutPath: process.cwd(),
+        command: { type: 'run_recipe', recipeName: 'docs-check' },
+      }),
+    ).rejects.toThrow(/allowedCommandPrefixes/);
   });
 });
