@@ -12,7 +12,7 @@ import {
   renderInvestigationArtifact,
   renderInvestigationArtifactList,
 } from './app/investigation-artifacts.js';
-import { readAppJobs, renderAppJobList } from './app/jobs.js';
+import { readAppJobs, renderAppJobList, retryAppJob } from './app/jobs.js';
 import {
   buildGitHubAppManifest,
   buildGitHubOrgAppManifestUrl,
@@ -373,6 +373,21 @@ export function buildProgram(deps: CliDependencies = {}): Command {
         process.stdout.write(opts.json ? `${JSON.stringify(jobs, null, 2)}\n` : renderAppJobList(jobs));
       },
     );
+
+  jobs
+    .command('retry')
+    .description('requeue one failed or dead-letter GitHub App job')
+    .argument('<jobId>', 'app job id')
+    .option(
+      '--state <path>',
+      'GitHub App SQLite state path',
+      process.env.GARDENER_APP_STATE_PATH ?? '.gardener-state/app.db',
+    )
+    .option('--json', 'emit machine-readable JSON')
+    .action((jobId: string, opts: { state: string; json?: boolean }) => {
+      const job = retryAppJob(opts.state, jobId);
+      process.stdout.write(opts.json ? `${JSON.stringify(job, null, 2)}\n` : renderAppJobList([job]));
+    });
 
   const feedback = program.command('feedback').description('record or import human review feedback');
 

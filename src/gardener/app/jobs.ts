@@ -18,6 +18,22 @@ export function readAppJobs(statePath: string, filters: JobFilters = {}): AppJob
   }
 }
 
+export function retryAppJob(statePath: string, jobId: string, now: Date = new Date()): AppJobRecord {
+  const db = new StoreDb(statePath);
+  try {
+    const state = new SqliteAppStateStore(db.db);
+    const job = state.listJobs().find((candidate) => candidate.id === jobId);
+    if (!job) throw new Error(`App job not found: ${jobId}`);
+    if (job.status !== 'failed' && job.status !== 'dead_letter') {
+      throw new Error(`App job ${jobId} is ${job.status}; only failed or dead_letter jobs can be retried manually`);
+    }
+    state.scheduleJobRetry(jobId, now.toISOString(), `manually retried at ${now.toISOString()}`);
+    return state.listJobs().find((candidate) => candidate.id === jobId)!;
+  } finally {
+    db.close();
+  }
+}
+
 export function renderAppJobList(jobs: AppJobRecord[]): string {
   if (jobs.length === 0) return 'No app jobs found.\n';
   return `${jobs
