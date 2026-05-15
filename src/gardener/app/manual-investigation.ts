@@ -171,6 +171,7 @@ export function renderManualInvestigationComment(args: {
   commands: ManualCommandResult[];
   artifactId?: string;
 }): string {
+  const outcome = summarizeManualInvestigationOutcome(args.commands);
   const lines = [
     '🌱 **Backlog Gardener manual investigation**',
     '',
@@ -178,6 +179,8 @@ export function renderManualInvestigationComment(args: {
     '',
     `Recipe: \`${args.recipeName}\`${args.description ? ` — ${args.description}` : ''}`,
     args.artifactId ? `Artifact: \`${args.artifactId}\`` : null,
+    `Outcome: **${outcome.label}**`,
+    `Commands: ${outcome.passed} passed, ${outcome.failed} failed, ${outcome.timedOut} timed out`,
     '',
     '## Command results',
   ];
@@ -190,6 +193,26 @@ export function renderManualInvestigationComment(args: {
   }
   lines.push('', '<!-- backlog-gardener:summary:v1 -->');
   return lines.filter((line): line is string => line !== null).join('\n');
+}
+
+function summarizeManualInvestigationOutcome(commands: ManualCommandResult[]): {
+  label: 'passed' | 'failed' | 'timed out' | 'mixed';
+  passed: number;
+  failed: number;
+  timedOut: number;
+} {
+  const timedOut = commands.filter((command) => command.timedOut).length;
+  const passed = commands.filter((command) => command.exitCode === 0 && !command.timedOut).length;
+  const failed = commands.length - passed - timedOut;
+  const label =
+    timedOut > 0 && passed + failed === 0
+      ? 'timed out'
+      : failed > 0 || timedOut > 0
+        ? passed > 0
+          ? 'mixed'
+          : 'failed'
+        : 'passed';
+  return { label, passed, failed, timedOut };
 }
 
 function safeCommandEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
