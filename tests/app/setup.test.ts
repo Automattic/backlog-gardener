@@ -81,7 +81,7 @@ describe('GitHub App setup helpers', () => {
       '/app': { ok: true },
       '/app/installations': [{ id: 10, account: { login: 'example-org' } }],
       '/app/installations/10/access_tokens': { token: 'installation-token' },
-      '/repos/example-org/example-repo/installation': { id: 10 },
+      '/repos/example-org/example-repo': { id: 123, full_name: 'example-org/example-repo' },
       '/repos/example-org/example-repo/contents/.github/gardener.yml': { type: 'file' },
       '/repos/example-org/example-repo/contents/.gardener.md': { type: 'file' },
     };
