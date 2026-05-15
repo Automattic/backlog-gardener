@@ -68,6 +68,7 @@ actions:
 prReviews:
   enabled: true
   liveMode: true
+  inlineComments: false
   triggers:
     opened: true
     readyForReview: true
@@ -93,6 +94,20 @@ investigation:
         - pnpm test
 ```
 
+For stricter repositories, restrict recipe commands to approved prefixes:
+
+```yaml
+investigation:
+  enabled: true
+  allowedCommandPrefixes:
+    - pnpm
+    - npm
+    - node
+    - test
+```
+
+When prefixes are configured, every recipe command must exactly match a prefix or start with `<prefix> `. Gardener also redacts common token, API key, and private-key patterns from command output before storing artifacts or posting comments.
+
 Trusted maintainers can trigger recipes from an issue or PR thread:
 
 ```text
@@ -114,7 +129,20 @@ Command behavior:
 - `rerun` runs the latest recipe previously used on the thread.
 - `explain` posts the latest persisted investigation summary for the thread.
 
-## 4. Inspect jobs locally
+## 4. Inline PR review comments
+
+PR reviews are summary-only by default. To allow Gardener to attach file/line review comments, opt in explicitly:
+
+```yaml
+prReviews:
+  enabled: true
+  liveMode: true
+  inlineComments: true
+```
+
+Inline comments are only published when Gardener can validate that the target line is an added line in the pull request patch. Invalid or unchanged-line suggestions are dropped and kept in the persisted artifact details.
+
+## 5. Inspect jobs locally
 
 Webhook deliveries are persisted as app jobs before processing. Inspect them when debugging webhook delivery, retries, skipped work, or dead-lettered failures:
 
@@ -137,7 +165,7 @@ pnpm gardener github-app jobs retry <job-id> \
 
 Manual retries preserve the attempt count so repeated failures remain visible in the job history.
 
-## 5. Inspect artifacts locally
+## 6. Inspect artifacts locally
 
 All issue, PR, and manual investigation results are persisted in SQLite.
 
@@ -152,7 +180,7 @@ pnpm gardener github-app investigations show <artifact-id> \
 
 Use artifacts to debug skipped comments, suppressed issue triage, manual command outputs, and synthesized conclusions.
 
-## 6. Safety model
+## 7. Safety model
 
 Gardener favors explicit opt-in and low-risk defaults:
 
@@ -166,7 +194,7 @@ Gardener favors explicit opt-in and low-risk defaults:
 - Obvious secret/env dumping and curl-pipe-shell commands are rejected during config parsing.
 - Concurrent manual investigations for the same issue/PR are locked to avoid duplicate runs and comment spam.
 
-## 7. Local development loop
+## 8. Local development loop
 
 For local webhook testing:
 
