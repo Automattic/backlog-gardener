@@ -47,6 +47,7 @@ describe('manual investigation commands', () => {
     expect(parseManualInvestigationCommand('@gardener help')).toEqual({ type: 'help' });
     expect(parseManualInvestigationCommand('@gardener explain')).toEqual({ type: 'explain' });
     expect(parseManualInvestigationCommand('@gardener list recipes')).toEqual({ type: 'list_recipes' });
+    expect(parseManualInvestigationCommand('@gardener rerun')).toEqual({ type: 'rerun' });
     expect(parseManualInvestigationCommand('@gardener investigate')).toEqual({
       type: 'run_recipe',
       recipeName: 'default',
@@ -96,6 +97,7 @@ investigation:
 
     expect(renderManualInvestigationHelp(config)).toContain('@gardener run recipe <name>');
     expect(renderManualInvestigationHelp(config)).toContain('@gardener list recipes');
+    expect(renderManualInvestigationHelp(config)).toContain('@gardener rerun');
     expect(renderRecipeList(config)).toContain('`docs-check` — Check docs.');
     expect(renderUnknownRecipeComment(config, 'missing')).toContain('Unknown recipe: `missing`');
     expect(renderUnknownRecipeComment(config, 'missing')).toContain('`docs-check`');
