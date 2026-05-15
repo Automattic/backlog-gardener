@@ -42,6 +42,8 @@ actions:
 investigation:
   enabled: true
   defaultRecipe: docs-check
+  allowedCommandPrefixes:
+    - pnpm
   recipes:
     docs-check:
       commands:
@@ -68,6 +70,7 @@ controls:
     expect(config.actions.issueComments).toBe(true);
     expect(config.investigation.enabled).toBe(true);
     expect(config.investigation.defaultRecipe).toBe('docs-check');
+    expect(config.investigation.allowedCommandPrefixes).toEqual(['pnpm']);
     expect(config.prReviews.enabled).toBe(true);
     expect(config.prReviews.triggers.synchronize).toBe(true);
     expect(config.controls.ignoreLabels).toContain('needs-triage');
