@@ -10,7 +10,7 @@ import { computeAttentionFacts } from '../pipeline/attention.js';
 import { decideFinding } from '../pipeline/surfacing.js';
 import type { GitHubAppConfig } from './config.js';
 import type { GitHubAppClient, GitHubIssueSummary, GitHubPullRequestFileSummary } from './publisher.js';
-import type { AppDecision } from './types.js';
+import type { AppDecision, PullRequestReviewComment } from './types.js';
 
 interface PrReviewOutput {
   summary: string;
@@ -18,6 +18,7 @@ interface PrReviewOutput {
   nonBlockingSuggestions: string[];
   verification: string[];
   questions: string[];
+  inlineComments: Array<{ path: string; line: number; severity: 'blocking' | 'suggestion' | 'question'; body: string }>;
 }
 
 export interface IssueInvestigationResult {
@@ -299,8 +300,11 @@ export async function enrichDecisionWithInvestigationResult(args: {
       };
     }
     const reviewBody = renderPrReviewBody(result.body);
+    const reviewComments = args.config.prReviews.inlineComments
+      ? filterInlineReviewComments(result.output.inlineComments, result.files)
+      : [];
     return {
-      decision: { ...args.decision, reviewBody },
+      decision: { ...args.decision, reviewBody, ...(reviewComments.length ? { reviewComments } : {}) },
       artifact: {
         subjectType: 'pull_request',
         subjectNumber: args.decision.pullRequest.pullRequestNumber,
@@ -309,6 +313,7 @@ export async function enrichDecisionWithInvestigationResult(args: {
         generatedBody: reviewBody,
         details: {
           output: result.output,
+          inlineCommentCount: reviewComments.length,
           files: result.files.map((file) => ({
             filename: file.filename,
             status: file.status,
@@ -493,6 +498,50 @@ function renderPrReviewBody(body: string): string {
     '',
     body,
   ].join('\n');
+}
+
+function filterInlineReviewComments(
+  comments: PrReviewOutput['inlineComments'],
+  files: GitHubPullRequestFileSummary[],
+): PullRequestReviewComment[] {
+  const allowed = new Map(files.map((file) => [file.filename, addedLinesFromPatch(file.patch)]));
+  return comments
+    .filter((comment) => comment.body.trim())
+    .filter((comment) => allowed.get(comment.path)?.has(comment.line))
+    .slice(0, 10)
+    .map((comment) => ({
+      path: comment.path,
+      line: comment.line,
+      side: 'RIGHT' as const,
+      body: `${severityLabel(comment.severity)} ${comment.body.trim()}`,
+    }));
+}
+
+function addedLinesFromPatch(patch: string): Set<number> {
+  const lines = new Set<number>();
+  let newLine = 0;
+  for (const patchLine of patch.split('\n')) {
+    const hunk = patchLine.match(/^@@ -\d+(?:,\d+)? \+(\d+)(?:,\d+)? @@/);
+    if (hunk) {
+      newLine = Number.parseInt(hunk[1]!, 10);
+      continue;
+    }
+    if (patchLine.startsWith('+++')) continue;
+    if (patchLine.startsWith('+')) {
+      lines.add(newLine);
+      newLine += 1;
+      continue;
+    }
+    if (patchLine.startsWith('-')) continue;
+    if (newLine > 0) newLine += 1;
+  }
+  return lines;
+}
+
+function severityLabel(severity: PrReviewOutput['inlineComments'][number]['severity']): string {
+  if (severity === 'blocking') return '🚫 **Blocking:**';
+  if (severity === 'question') return '❓ **Question:**';
+  return '💡 **Suggestion:**';
 }
 
 function renderStructuredPrReview(output: PrReviewOutput): string {

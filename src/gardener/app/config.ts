@@ -112,6 +112,7 @@ export const GitHubAppConfigSchema = z
         liveMode: z.boolean().default(false),
         eventType: z.string().min(1).default('backlog-gardener.pr-review'),
         includeDrafts: z.boolean().default(false),
+        inlineComments: z.boolean().default(false),
         cooldownHours: z.number().int().nonnegative().default(24),
         triggers: z
           .object({
@@ -128,6 +129,7 @@ export const GitHubAppConfigSchema = z
         liveMode: false,
         eventType: 'backlog-gardener.pr-review',
         includeDrafts: false,
+        inlineComments: false,
         cooldownHours: 24,
         triggers: { opened: true, readyForReview: true, synchronize: false },
       }),

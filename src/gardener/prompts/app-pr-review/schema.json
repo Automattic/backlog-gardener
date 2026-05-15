@@ -6,7 +6,21 @@
     "blockingRisks": { "type": "array", "items": { "type": "string" } },
     "nonBlockingSuggestions": { "type": "array", "items": { "type": "string" } },
     "verification": { "type": "array", "items": { "type": "string" } },
-    "questions": { "type": "array", "items": { "type": "string" } }
+    "questions": { "type": "array", "items": { "type": "string" } },
+    "inlineComments": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "path": { "type": "string" },
+          "line": { "type": "number" },
+          "severity": { "type": "string", "enum": ["blocking", "suggestion", "question"] },
+          "body": { "type": "string" }
+        },
+        "required": ["path", "line", "severity", "body"]
+      }
+    }
   },
-  "required": ["summary", "blockingRisks", "nonBlockingSuggestions", "verification", "questions"]
+  "required": ["summary", "blockingRisks", "nonBlockingSuggestions", "verification", "questions", "inlineComments"]
 }

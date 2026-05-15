@@ -250,10 +250,14 @@ export class GitHubRestAppClient implements GitHubAppClient {
     pullNumber: number;
     body: string;
     event: 'COMMENT';
+    comments?: Array<{ path: string; line: number; side: 'RIGHT'; body: string }>;
   }): Promise<{ id: number; body: string }> {
     const review = await this.request<GitHubApiPullRequestReview>(
       `/repos/${args.owner}/${args.repo}/pulls/${args.pullNumber}/reviews`,
-      { method: 'POST', body: { body: args.body, event: args.event } },
+      {
+        method: 'POST',
+        body: { body: args.body, event: args.event, ...(args.comments?.length ? { comments: args.comments } : {}) },
+      },
     );
     return { id: review.id, body: review.body ?? '' };
   }
