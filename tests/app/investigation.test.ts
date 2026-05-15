@@ -69,6 +69,7 @@ class FakeProvider implements CompletionProvider {
         nonBlockingSuggestions: ['Suggestion one.'],
         verification: ['Run test one.'],
         questions: [],
+        inlineComments: [{ path: 'src/checkout.ts', line: 1, severity: 'blocking', body: 'Avoid this risky change.' }],
       },
     };
     return { output: outputs[args.promptId] as T, model: this.model, usage: { inputTokens: 0, outputTokens: 0 } };
@@ -242,11 +243,17 @@ describe('app investigation generation', () => {
         decision,
         client,
         provider: new FakeProvider(),
-        config: DEFAULT_GITHUB_APP_CONFIG,
+        config: {
+          ...DEFAULT_GITHUB_APP_CONFIG,
+          prReviews: { ...DEFAULT_GITHUB_APP_CONFIG.prReviews, inlineComments: true },
+        },
       }),
     ).resolves.toEqual({
       ...decision,
       reviewBody: expect.stringContaining('## Blocking risks'),
+      reviewComments: [
+        { path: 'src/checkout.ts', line: 1, side: 'RIGHT', body: '🚫 **Blocking:** Avoid this risky change.' },
+      ],
     });
   });
 

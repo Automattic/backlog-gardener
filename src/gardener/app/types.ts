@@ -55,6 +55,7 @@ export type AppDecision =
       mode: 'noop' | 'live';
       reason: string;
       reviewBody?: string;
+      reviewComments?: PullRequestReviewComment[];
     };
 
 export interface PolicyResult {
@@ -74,6 +75,13 @@ export interface AppRunRecord {
   startedAt: string;
   completedAt: string | null;
   error: string | null;
+}
+
+export interface PullRequestReviewComment {
+  path: string;
+  line: number;
+  side: 'RIGHT';
+  body: string;
 }
 
 export interface AppJobRecord {

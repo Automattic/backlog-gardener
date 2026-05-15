@@ -1,6 +1,6 @@
 import { appendBotMarker, hasBotMarker, REPORT_MARKER } from './markers.js';
 import { bodyHash, type AppStateStore } from './state.js';
-import type { AppDecision, BotMarker, IssueRef, RepoRef, ReportUpdate } from './types.js';
+import type { AppDecision, BotMarker, IssueRef, PullRequestReviewComment, RepoRef, ReportUpdate } from './types.js';
 
 export interface GitHubIssueSummary {
   number: number;
@@ -92,6 +92,7 @@ export interface GitHubAppClient {
     pullNumber: number;
     body: string;
     event: 'COMMENT';
+    comments?: PullRequestReviewComment[];
   }): Promise<GitHubPullRequestReviewSummary>;
 }
 
@@ -146,6 +147,7 @@ async function publishPrReviewComment(args: {
     pullNumber: pr.pullRequestNumber,
     body,
     event: 'COMMENT',
+    ...(args.decision.reviewComments?.length ? { comments: args.decision.reviewComments } : {}),
   });
   return { reviewId: review.id };
 }
