@@ -45,6 +45,7 @@ afterEach(async () => {
 describe('manual investigation commands', () => {
   it('parses supported commands', () => {
     expect(parseManualInvestigationCommand('@gardener help')).toEqual({ type: 'help' });
+    expect(parseManualInvestigationCommand('@gardener explain')).toEqual({ type: 'explain' });
     expect(parseManualInvestigationCommand('@gardener list recipes')).toEqual({ type: 'list_recipes' });
     expect(parseManualInvestigationCommand('@gardener investigate')).toEqual({
       type: 'run_recipe',

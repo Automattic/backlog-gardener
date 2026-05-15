@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   renderInvestigationArtifact,
+  renderInvestigationArtifactExplanation,
   renderInvestigationArtifactList,
 } from '../../src/gardener/app/investigation-artifacts.js';
 import type { AppInvestigationArtifactRecord } from '../../src/gardener/app/types.js';
@@ -36,5 +37,18 @@ describe('investigation artifact rendering', () => {
     expect(output).toContain('Investigation: app_inv_1');
     expect(output).toContain('Suppression reason: maintainer_activity_active');
     expect(output).toContain('defer_because_already_active');
+  });
+
+  it('renders concise thread explanations', () => {
+    const output = renderInvestigationArtifactExplanation(artifact);
+
+    expect(output).toContain('Backlog Gardener explanation');
+    expect(output).toContain('Latest artifact: `app_inv_1`');
+    expect(output).toContain('Suppression reason: `maintainer_activity_active`');
+    expect(output).toContain('Action: `defer_because_already_active`');
+  });
+
+  it('renders an explanation when no artifact exists', () => {
+    expect(renderInvestigationArtifactExplanation(null)).toContain('do not have a persisted investigation artifact');
   });
 });
