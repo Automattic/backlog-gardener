@@ -222,19 +222,19 @@ export function startGitHubAppServer(options: AppServerOptions): ReturnType<type
         return;
       }
       try {
+        const subjectNumber = args.payload.issue!.number!;
+        const subjectType = args.payload.issue?.pull_request ? 'pull_request' : 'issue';
+        const latestArtifact =
+          state
+            .listInvestigationArtifacts()
+            .filter(
+              (artifact) =>
+                artifact.repo === repo.fullName &&
+                artifact.subjectType === subjectType &&
+                artifact.subjectNumber === subjectNumber,
+            )
+            .sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0] ?? null;
         if (command.type === 'help' || command.type === 'list_recipes' || command.type === 'explain') {
-          const subjectNumber = args.payload.issue!.number!;
-          const subjectType = args.payload.issue?.pull_request ? 'pull_request' : 'issue';
-          const latestArtifact =
-            state
-              .listInvestigationArtifacts()
-              .filter(
-                (artifact) =>
-                  artifact.repo === repo.fullName &&
-                  artifact.subjectType === subjectType &&
-                  artifact.subjectNumber === subjectNumber,
-              )
-              .sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0] ?? null;
           await args.loaded.client.createIssueComment({
             owner: repo.owner,
             repo: repo.repo,
@@ -261,6 +261,28 @@ export function startGitHubAppServer(options: AppServerOptions): ReturnType<type
           });
           return;
         }
+        const commandToRun =
+          command.type === 'rerun'
+            ? latestArtifact?.details.recipeName && typeof latestArtifact.details.recipeName === 'string'
+              ? ({ type: 'run_recipe', recipeName: latestArtifact.details.recipeName } as const)
+              : null
+            : command;
+        if (!commandToRun) {
+          await args.loaded.client.createIssueComment({
+            owner: repo.owner,
+            repo: repo.repo,
+            issueNumber: subjectNumber,
+            body: '🌱 **Backlog Gardener manual investigation**\n\nI could not find a previous recipe for this thread. Use `@gardener list recipes` and then `@gardener run recipe <name>`.',
+          });
+          state.completeJob(args.jobId, 'completed');
+          writeStructuredLog({
+            event: 'github_manual_investigation_rerun_missing_recipe',
+            deliveryId: args.deliveryId,
+            jobId: args.jobId,
+            repo: repo.fullName,
+          });
+          return;
+        }
         if (!args.config.investigation.enabled) {
           const issueNumber = args.payload.issue?.number;
           if (issueNumber) {
@@ -282,7 +304,7 @@ export function startGitHubAppServer(options: AppServerOptions): ReturnType<type
           return;
         }
         const requestedRecipe =
-          command.recipeName === 'default' ? args.config.investigation.defaultRecipe : command.recipeName;
+          commandToRun.recipeName === 'default' ? args.config.investigation.defaultRecipe : commandToRun.recipeName;
         if (!args.config.investigation.recipes[requestedRecipe]) {
           await args.loaded.client.createIssueComment({
             owner: repo.owner,
@@ -300,8 +322,6 @@ export function startGitHubAppServer(options: AppServerOptions): ReturnType<type
           });
           return;
         }
-        const subjectNumber = args.payload.issue!.number!;
-        const subjectType = args.payload.issue?.pull_request ? 'pull_request' : 'issue';
         const lockKey = `${repo.fullName}:${subjectType}:${subjectNumber}`;
         if (!state.acquireInvestigationLock({ key: lockKey, owner: args.jobId })) {
           await args.loaded.client.createIssueComment({
@@ -331,7 +351,7 @@ export function startGitHubAppServer(options: AppServerOptions): ReturnType<type
             config: args.config,
             repo,
             checkoutPath: checkout.path,
-            command,
+            command: commandToRun,
           });
           let synthesis = fallbackManualInvestigationSynthesis(result);
           try {

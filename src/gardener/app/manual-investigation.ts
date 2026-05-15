@@ -13,6 +13,7 @@ export type ManualInvestigationCommand =
   | { type: 'help' }
   | { type: 'explain' }
   | { type: 'list_recipes' }
+  | { type: 'rerun' }
   | { type: 'run_recipe'; recipeName: string };
 
 export interface ManualInvestigationCommandPayload {
@@ -58,6 +59,8 @@ export function parseManualInvestigationCommand(body: string): ManualInvestigati
   if (explainMatch) return { type: 'explain' };
   const listMatch = body.match(/^\s*@gardener\s+list\s+recipes\b/im);
   if (listMatch) return { type: 'list_recipes' };
+  const rerunMatch = body.match(/^\s*@gardener\s+rerun\b/im);
+  if (rerunMatch) return { type: 'rerun' };
   const runMatch = body.match(/^\s*@gardener\s+(?:(investigate)|reproduce|run\s+recipe\s+([A-Za-z0-9_.-]+))\b/im);
   if (!runMatch) return null;
   return { type: 'run_recipe', recipeName: runMatch[2] ?? 'default' };
@@ -193,6 +196,7 @@ export function renderManualInvestigationHelp(config: GitHubAppConfig): string {
     '- `@gardener run recipe <name>` — run a named recipe',
     '- `@gardener list recipes` — list configured recipes',
     '- `@gardener explain` — summarize the latest persisted investigation for this thread',
+    '- `@gardener rerun` — rerun the latest recipe used on this thread',
     '- `@gardener help` — show this help',
     '',
     renderRecipeList(config),
