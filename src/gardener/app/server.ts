@@ -96,6 +96,7 @@ export function startGitHubAppServer(options: AppServerOptions): ReturnType<type
           void runAppWorkerTick({
             state,
             limit: 1,
+            jobIds: [job.id],
             processJob: async (queuedJob: AppJobRecord) => {
               await processWebhookJob({ jobId: queuedJob.id, deliveryId, eventName, payload, config, loaded });
             },

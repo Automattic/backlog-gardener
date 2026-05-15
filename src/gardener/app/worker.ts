@@ -4,6 +4,7 @@ import type { AppJobRecord } from './types.js';
 export interface AppWorkerTickOptions {
   state: AppStateStore;
   limit?: number;
+  jobIds?: string[];
   now?: Date;
   baseRetryDelaySeconds?: number;
   processJob: (job: AppJobRecord) => Promise<void>;
@@ -18,8 +19,10 @@ export interface AppWorkerTickResult {
 
 export async function runAppWorkerTick(options: AppWorkerTickOptions): Promise<AppWorkerTickResult> {
   const now = options.now ?? new Date();
+  const jobIds = options.jobIds ? new Set(options.jobIds) : null;
   const queuedJobs = options.state
     .listJobs()
+    .filter((job) => !jobIds || jobIds.has(job.id))
     .filter((job) => job.status === 'queued')
     .filter((job) => !job.nextRunAt || Date.parse(job.nextRunAt) <= now.getTime())
     .sort((a, b) => a.createdAt.localeCompare(b.createdAt))
