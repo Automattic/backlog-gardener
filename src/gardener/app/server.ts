@@ -124,7 +124,6 @@ export function startGitHubAppServer(options: AppServerOptions): ReturnType<type
       config: GitHubAppConfig;
       loaded: { client: GitHubRestAppClient; config: GitHubAppConfig } | null;
     }): Promise<void> {
-      state.startJob(args.jobId);
       if (args.eventName === 'issue_comment') {
         await processManualInvestigationCommand(args);
         return;
