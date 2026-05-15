@@ -1,0 +1,19 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["outcome", "evidence", "nextStep", "confidence"],
+  "properties": {
+    "outcome": {
+      "type": "string",
+      "enum": ["reproduced", "not_reproduced", "inconclusive", "passed", "failed"]
+    },
+    "evidence": {
+      "type": "array",
+      "items": { "type": "string" },
+      "minItems": 1,
+      "maxItems": 5
+    },
+    "nextStep": { "type": "string" },
+    "confidence": { "type": "string", "enum": ["low", "medium", "high"] }
+  }
+}
