@@ -10,6 +10,9 @@ const job: AppJobRecord = {
   repo: 'o/r',
   status: 'failed',
   payloadJson: '{}',
+  attempts: 2,
+  maxAttempts: 3,
+  nextRunAt: '2026-05-15T00:01:00.000Z',
   createdAt: '2026-05-15T00:00:00.000Z',
   startedAt: '2026-05-15T00:00:01.000Z',
   completedAt: '2026-05-15T00:00:02.000Z',
@@ -19,7 +22,7 @@ const job: AppJobRecord = {
 describe('app job rendering', () => {
   it('renders compact job rows', () => {
     expect(renderAppJobList([job])).toContain(
-      'app_job_1 failed issues o/r delivery=delivery-1 created=2026-05-15T00:00:00.000Z error=Something failed with details',
+      'app_job_1 failed issues o/r attempts=2/3 nextRun=2026-05-15T00:01:00.000Z delivery=delivery-1 created=2026-05-15T00:00:00.000Z error=Something failed with details',
     );
   });
 
