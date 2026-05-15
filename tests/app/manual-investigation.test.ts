@@ -72,6 +72,21 @@ investigation:
     expect(renderUnknownRecipeComment(config, 'missing')).toContain('`docs-check`');
   });
 
+  it('summarizes failed and timed out command outcomes', () => {
+    const body = renderManualInvestigationComment({
+      recipeName: 'mixed',
+      description: '',
+      commands: [
+        { command: 'echo ok', exitCode: 0, timedOut: false, stdout: 'ok', stderr: '' },
+        { command: 'false', exitCode: 1, timedOut: false, stdout: '', stderr: 'nope' },
+        { command: 'sleep 10', exitCode: null, timedOut: true, stdout: '', stderr: 'timeout' },
+      ],
+    });
+
+    expect(body).toContain('Outcome: **mixed**');
+    expect(body).toContain('Commands: 1 passed, 1 failed, 1 timed out');
+  });
+
   it('runs a configured recipe and renders the result with an artifact id', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'gardener-manual-'));
     tempDirs.push(dir);
@@ -104,6 +119,8 @@ investigation:
     expect(result.commands[0]).toEqual(expect.objectContaining({ exitCode: 0, stdout: expect.stringContaining('42') }));
     expect(body).toContain('Backlog Gardener manual investigation');
     expect(body).toContain('Artifact: `app_inv_123`');
+    expect(body).toContain('Outcome: **passed**');
+    expect(body).toContain('Commands: 1 passed, 0 failed, 0 timed out');
     expect(body).toContain('node -e');
   });
 });
