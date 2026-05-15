@@ -45,19 +45,12 @@ report:
 
 actions:
   issueComments: true
-  labels: false
-  closeIssues: false
-  createLinear: false
-  openPullRequests: false
 
-pullRequests:
+prReviews:
   enabled: true
-  reviews:
-    enabled: true
-    liveMode: true
-    mode: summary-review
-    dedupeByHeadSha: true
+  liveMode: true
   includeDrafts: false
+  cooldownHours: 24
   triggers:
     opened: true
     readyForReview: true

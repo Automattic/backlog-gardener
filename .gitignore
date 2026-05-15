@@ -4,6 +4,7 @@ coverage/
 .gardener-state/
 .gardener-worktrees/
 out/
+.secrets/
 .env
 .env.*
 !.env.example

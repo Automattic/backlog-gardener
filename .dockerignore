@@ -2,6 +2,7 @@ node_modules
 .git
 .gardener-state
 .gardener-worktrees
+.secrets
 out
 dist
 coverage

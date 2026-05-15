@@ -60,18 +60,10 @@ export const GitHubAppConfigSchema = z
     actions: z
       .object({
         issueComments: z.boolean().default(false),
-        labels: z.boolean().default(false),
-        closeIssues: z.boolean().default(false),
-        createLinear: z.boolean().default(false),
-        openPullRequests: z.boolean().default(false),
       })
       .strict()
       .default({
         issueComments: false,
-        labels: false,
-        closeIssues: false,
-        createLinear: false,
-        openPullRequests: false,
       }),
     prReviews: z
       .object({
