@@ -64,6 +64,16 @@ report:
 actions:
   issueComments: true
 
+investigation:
+  defaultRecipe: docs-check
+  recipes:
+    docs-check:
+      description: Run a lightweight docs/package validation recipe.
+      timeoutSeconds: 120
+      maxOutputChars: 12000
+      commands:
+        - pnpm test
+
 prReviews:
   enabled: true
   liveMode: true
@@ -86,7 +96,7 @@ controls:
 Repository config can enable or narrow behaviour, but it cannot bypass app safety constraints:
 
 - unsupported webhook events are ignored
-- issue comment webhooks are ignored to avoid bot loops
+- issue comment webhooks only run trusted maintainer `@gardener` commands; other comments are ignored to avoid bot loops
 - writes require `enabled: true` plus the relevant action flag
 - protected/ignored labels block comments and PR reviews
 - context size is capped before model calls

@@ -12,6 +12,11 @@ import { parseGitHubAppConfig, type GitHubAppConfig } from './config.js';
 import { fetchRepoGitHubAppConfig, GitHubRestAppClient } from './github-client.js';
 import { createInstallationToken, verifyGitHubWebhookSignature } from './github-app.js';
 import { enrichDecisionWithInvestigationResult } from './investigation.js';
+import {
+  manualInvestigationCommandAllowed,
+  parseManualInvestigationCommand,
+  runManualInvestigation,
+} from './manual-investigation.js';
 import { buildWebhookDecisionLogEntry, writeStructuredLog } from './logging.js';
 import { evaluateDecisionPolicy } from './policy.js';
 import { publishDecision } from './publisher.js';
@@ -101,6 +106,10 @@ export function startGitHubAppServer(options: AppServerOptions): ReturnType<type
       loaded: { client: GitHubRestAppClient; config: GitHubAppConfig } | null;
     }): Promise<void> {
       state.startJob(args.jobId);
+      if (args.eventName === 'issue_comment') {
+        await processManualInvestigationCommand(args);
+        return;
+      }
       const initialResult = handleGitHubWebhook({
         eventName: args.eventName,
         deliveryId: args.deliveryId,
@@ -178,6 +187,92 @@ export function startGitHubAppServer(options: AppServerOptions): ReturnType<type
         ...(investigationId ? { investigationId } : {}),
         ...(suppressionReason ? { suppressionReason } : {}),
       });
+    }
+
+    async function processManualInvestigationCommand(args: {
+      jobId: string;
+      deliveryId: string;
+      eventName: string;
+      payload: Parameters<typeof handleGitHubWebhook>[0]['payload'];
+      config: GitHubAppConfig;
+      loaded: { client: GitHubRestAppClient; config: GitHubAppConfig } | null;
+    }): Promise<void> {
+      const command = parseManualInvestigationCommand(args.payload.comment?.body ?? '');
+      const repo = repoRefFromPayload(args.payload);
+      if (!command || !repo || !args.loaded || !manualInvestigationCommandAllowed(args.payload)) {
+        state.completeJob(args.jobId, 'skipped');
+        writeStructuredLog({
+          event: 'github_manual_investigation_skipped',
+          deliveryId: args.deliveryId,
+          jobId: args.jobId,
+          repo: repo?.fullName ?? null,
+          reason: !command
+            ? 'no_gardener_command'
+            : !manualInvestigationCommandAllowed(args.payload)
+              ? 'untrusted_comment_author'
+              : 'missing_context',
+        });
+        return;
+      }
+      try {
+        const checkout = ensureAppRepoCheckout({
+          owner: repo.owner,
+          repo: repo.repo,
+          branch: process.env.GARDENER_APP_CHECKOUT_BRANCH ?? args.config.code.branch,
+        });
+        const result = await runManualInvestigation({
+          payload: args.payload,
+          config: args.config,
+          repo,
+          client: args.loaded.client,
+          checkoutPath: checkout.path,
+          command,
+        });
+        const artifact = state.recordInvestigationArtifact({
+          jobId: args.jobId,
+          deliveryId: args.deliveryId,
+          repo: repo.fullName,
+          subjectType: result.subjectType,
+          subjectNumber: result.subjectNumber,
+          status: result.subjectType === 'issue' ? 'comment_ready' : 'review_ready',
+          publicationStatus: 'published',
+          generatedBody: result.body,
+          details: {
+            manualCommand: args.payload.comment?.body ?? '',
+            recipeName: result.recipeName,
+            description: result.description,
+            commands: result.commands,
+          },
+        });
+        state.completeJob(args.jobId, 'completed');
+        writeStructuredLog({
+          event: 'github_manual_investigation_completed',
+          deliveryId: args.deliveryId,
+          jobId: args.jobId,
+          repo: repo.fullName,
+          investigationId: artifact.id,
+          recipeName: result.recipeName,
+        });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        const issueNumber = args.payload.issue?.number;
+        if (issueNumber && repo && args.loaded) {
+          await args.loaded.client.createIssueComment({
+            owner: repo.owner,
+            repo: repo.repo,
+            issueNumber,
+            body: `🌱 **Backlog Gardener manual investigation**\n\nCould not run the requested recipe: ${message}`,
+          });
+        }
+        state.completeJob(args.jobId, 'failed', message);
+        writeStructuredLog({
+          event: 'github_manual_investigation_failed',
+          deliveryId: args.deliveryId,
+          jobId: args.jobId,
+          repo: repo?.fullName ?? null,
+          error: message,
+        });
+      }
     }
 
     async function handleScheduledReportRequest(): Promise<void> {

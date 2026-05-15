@@ -53,7 +53,7 @@ export interface DoctorResult {
 }
 
 const DEFAULT_DESCRIPTION = 'Local-first agent for surfacing actionable backlog and review signals.';
-const DEFAULT_EVENTS = ['issues', 'pull_request'];
+const DEFAULT_EVENTS = ['issues', 'issue_comment', 'pull_request'];
 const DEFAULT_PERMISSIONS = {
   contents: 'read',
   issues: 'write',

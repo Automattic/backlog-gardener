@@ -65,6 +65,25 @@ export const GitHubAppConfigSchema = z
       .default({
         issueComments: false,
       }),
+    investigation: z
+      .object({
+        defaultRecipe: z.string().min(1).default('default'),
+        recipes: z
+          .record(
+            z.string().min(1),
+            z
+              .object({
+                description: z.string().default(''),
+                timeoutSeconds: z.number().int().positive().max(1800).default(300),
+                maxOutputChars: z.number().int().positive().max(100_000).default(20_000),
+                commands: z.array(z.string().min(1)).min(1),
+              })
+              .strict(),
+          )
+          .default({}),
+      })
+      .strict()
+      .default({ defaultRecipe: 'default', recipes: {} }),
     prReviews: z
       .object({
         enabled: z.boolean().default(false),

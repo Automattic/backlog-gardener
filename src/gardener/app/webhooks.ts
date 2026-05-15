@@ -8,7 +8,18 @@ export interface GitHubWebhookPayload {
   action?: string;
   installation?: { id?: number };
   repository?: { name?: string; full_name?: string; owner?: { login?: string } };
-  issue?: { number?: number; title?: string; html_url?: string; labels?: Array<{ name?: string } | string> };
+  issue?: {
+    number?: number;
+    title?: string;
+    html_url?: string;
+    labels?: Array<{ name?: string } | string>;
+    pull_request?: unknown;
+  };
+  comment?: {
+    body?: string;
+    user?: { login?: string; type?: string } | null;
+    author_association?: string;
+  };
   pull_request?: {
     number?: number;
     html_url?: string;

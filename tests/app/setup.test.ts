@@ -26,7 +26,7 @@ describe('GitHub App setup helpers', () => {
       webhookUrl: 'https://example.test/webhooks/github',
     });
 
-    expect(result.manifest.default_events).toEqual(['issues', 'pull_request']);
+    expect(result.manifest.default_events).toEqual(['issues', 'issue_comment', 'pull_request']);
     expect(result.manifest.default_permissions.issues).toBe('write');
     expect(result.manifest.public).toBe(false);
     expect(decodeURIComponent(result.url)).toContain('Gardener Test');
