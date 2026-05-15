@@ -1,5 +1,6 @@
 import { randomBytes } from 'node:crypto';
-import { readFile, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { dirname, join } from 'node:path';
 
 import { createGitHubAppJwt } from './github-app.js';
 
@@ -143,6 +144,9 @@ export async function runGitHubAppDoctor(args: {
   privateKey?: string;
   webhookSecret?: string;
   repo?: string;
+  statePath?: string;
+  codeRoot?: string;
+  openAiApiKey?: string;
   fetchImpl?: typeof fetch;
   apiBaseUrl?: string;
 }): Promise<DoctorResult> {
@@ -150,6 +154,9 @@ export async function runGitHubAppDoctor(args: {
   const appId = args.appId ?? process.env.GARDENER_APP_ID;
   const privateKey = args.privateKey ?? process.env.GARDENER_APP_PRIVATE_KEY;
   const webhookSecret = args.webhookSecret ?? process.env.GARDENER_APP_WEBHOOK_SECRET;
+  const statePath = args.statePath ?? process.env.GARDENER_APP_STATE_PATH ?? '.gardener-state/app.db';
+  const codeRoot = args.codeRoot ?? process.env.GARDENER_APP_CODE_ROOT ?? '.gardener-worktrees';
+  const openAiApiKey = args.openAiApiKey ?? process.env.OPENAI_API_KEY;
   checks.push({ name: 'GARDENER_APP_ID', ok: Boolean(appId), message: appId ? 'present' : 'missing' });
   checks.push({
     name: 'GARDENER_APP_PRIVATE_KEY',
@@ -161,6 +168,9 @@ export async function runGitHubAppDoctor(args: {
     ok: Boolean(webhookSecret),
     message: webhookSecret ? 'present' : 'missing',
   });
+  checks.push({ name: 'OPENAI_API_KEY', ok: Boolean(openAiApiKey), message: openAiApiKey ? 'present' : 'missing' });
+  checks.push(await writablePathCheck('State DB directory writable', dirname(statePath)));
+  checks.push(await writablePathCheck('Code checkout root writable', codeRoot));
   if (appId && privateKey) {
     try {
       const jwt = createGitHubAppJwt({ appId, privateKey: normalizePrivateKey(privateKey) });
@@ -191,6 +201,18 @@ export async function runGitHubAppDoctor(args: {
     }
   }
   return { ok: checks.every((check) => check.ok), checks };
+}
+
+async function writablePathCheck(name: string, path: string): Promise<DoctorResult['checks'][number]> {
+  const probe = join(path, `.gardener-doctor-${Date.now()}-${Math.random().toString(16).slice(2)}`);
+  try {
+    await mkdir(path, { recursive: true });
+    await writeFile(probe, 'ok');
+    await rm(probe, { force: true });
+    return { name, ok: true, message: path };
+  } catch (error) {
+    return { name, ok: false, message: error instanceof Error ? error.message : String(error) };
+  }
 }
 
 async function repoInstallationChecks(args: {

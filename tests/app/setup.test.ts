@@ -62,7 +62,15 @@ describe('GitHub App setup helpers', () => {
   });
 
   it('reports missing credentials in doctor output', async () => {
-    const result = await runGitHubAppDoctor({ appId: '', privateKey: '', webhookSecret: '' });
+    const runtimeDir = await mkdtemp(join(tmpdir(), 'gardener-doctor-'));
+    tempDirs.push(runtimeDir);
+    const result = await runGitHubAppDoctor({
+      appId: '',
+      privateKey: '',
+      webhookSecret: '',
+      statePath: join(runtimeDir, 'state.db'),
+      codeRoot: join(runtimeDir, 'worktrees'),
+    });
 
     expect(result.ok).toBe(false);
     expect(result.checks.map((check) => check.name)).toContain('GARDENER_APP_ID');
@@ -77,11 +85,17 @@ describe('GitHub App setup helpers', () => {
       '/repos/example-org/example-repo/contents/.github/gardener.yml': { type: 'file' },
       '/repos/example-org/example-repo/contents/.gardener.md': { type: 'file' },
     };
+    const stateDir = await mkdtemp(join(tmpdir(), 'gardener-doctor-'));
+    const codeRoot = await mkdtemp(join(tmpdir(), 'gardener-doctor-'));
+    tempDirs.push(stateDir, codeRoot);
     const result = await runGitHubAppDoctor({
       appId: '123',
       privateKey: TEST_PRIVATE_KEY,
       webhookSecret: 'secret',
       repo: 'example-org/example-repo',
+      statePath: join(stateDir, 'state.db'),
+      codeRoot,
+      openAiApiKey: 'sk-test',
       fetchImpl: async (url) => {
         const path = new URL(String(url)).pathname;
         const body = responses[path];
@@ -94,6 +108,9 @@ describe('GitHub App setup helpers', () => {
       expect.arrayContaining([
         expect.objectContaining({ name: 'Installation access for example-org/example-repo', ok: true }),
         expect.objectContaining({ name: '.github/gardener.yml access', ok: true }),
+        expect.objectContaining({ name: 'OPENAI_API_KEY', ok: true }),
+        expect.objectContaining({ name: 'State DB directory writable', ok: true }),
+        expect.objectContaining({ name: 'Code checkout root writable', ok: true }),
       ]),
     );
   });
