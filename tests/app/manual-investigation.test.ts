@@ -10,6 +10,7 @@ import {
   parseManualInvestigationCommand,
   renderManualInvestigationComment,
   renderManualInvestigationHelp,
+  renderRecipeList,
   renderUnknownRecipeComment,
   runManualInvestigation,
   synthesizeManualInvestigation,
@@ -44,7 +45,12 @@ afterEach(async () => {
 describe('manual investigation commands', () => {
   it('parses supported commands', () => {
     expect(parseManualInvestigationCommand('@gardener help')).toEqual({ type: 'help' });
+    expect(parseManualInvestigationCommand('@gardener list recipes')).toEqual({ type: 'list_recipes' });
     expect(parseManualInvestigationCommand('@gardener investigate')).toEqual({
+      type: 'run_recipe',
+      recipeName: 'default',
+    });
+    expect(parseManualInvestigationCommand('@gardener reproduce')).toEqual({
       type: 'run_recipe',
       recipeName: 'default',
     });
@@ -88,7 +94,8 @@ investigation:
 `);
 
     expect(renderManualInvestigationHelp(config)).toContain('@gardener run recipe <name>');
-    expect(renderManualInvestigationHelp(config)).toContain('`docs-check` — Check docs.');
+    expect(renderManualInvestigationHelp(config)).toContain('@gardener list recipes');
+    expect(renderRecipeList(config)).toContain('`docs-check` — Check docs.');
     expect(renderUnknownRecipeComment(config, 'missing')).toContain('Unknown recipe: `missing`');
     expect(renderUnknownRecipeComment(config, 'missing')).toContain('`docs-check`');
   });
