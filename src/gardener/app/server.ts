@@ -11,13 +11,13 @@ import { ensureAppRepoCheckout } from './code.js';
 import { parseGitHubAppConfig, type GitHubAppConfig } from './config.js';
 import { fetchRepoGitHubAppConfig, GitHubRestAppClient } from './github-client.js';
 import { createInstallationToken, verifyGitHubWebhookSignature } from './github-app.js';
-import { enrichDecisionWithInvestigation } from './investigation.js';
+import { enrichDecisionWithInvestigationResult } from './investigation.js';
 import { buildWebhookDecisionLogEntry, writeStructuredLog } from './logging.js';
 import { evaluateDecisionPolicy } from './policy.js';
 import { publishDecision } from './publisher.js';
 import { runScheduledReportSweep } from './scheduler.js';
 import { SqliteAppStateStore } from './state.js';
-import type { RepoRef } from './types.js';
+import type { AppDecision, RepoRef } from './types.js';
 import { handleGitHubWebhook } from './webhooks.js';
 
 export interface AppServerOptions {
@@ -109,6 +109,8 @@ export function startGitHubAppServer(options: AppServerOptions): ReturnType<type
         state,
       });
       let result = initialResult;
+      let investigationId: string | null = null;
+      let suppressionReason: string | null = null;
       if (
         args.loaded &&
         initialResult.status === 'processed' &&
@@ -116,21 +118,42 @@ export function startGitHubAppServer(options: AppServerOptions): ReturnType<type
         initialResult.reasons.includes('allowed')
       ) {
         const codeRoot = codeRootForDecision(initialResult.decision, args.config);
-        const decision = await enrichDecisionWithInvestigation({
+        const enriched = await enrichDecisionWithInvestigationResult({
           decision: initialResult.decision,
           client: args.loaded.client,
           provider: createAppCompletionProvider(args.config),
           config: args.config,
           ...(codeRoot ? { codeRoot } : {}),
         });
-        const finalPolicy = evaluateDecisionPolicy(decision, args.config, {
+        if (enriched.artifact) {
+          suppressionReason = enriched.artifact.suppressionReason;
+          const artifact = state.recordInvestigationArtifact({
+            jobId: args.jobId,
+            runId: initialResult.runId,
+            deliveryId: args.deliveryId,
+            repo: repoFromDecisionOrPayload(enriched.decision, args.payload),
+            subjectType: enriched.artifact.subjectType,
+            subjectNumber: enriched.artifact.subjectNumber,
+            status: enriched.artifact.status,
+            suppressionReason: enriched.artifact.suppressionReason,
+            publicationStatus:
+              enriched.artifact.status === 'comment_ready' || enriched.artifact.status === 'review_ready'
+                ? 'pending'
+                : 'skipped',
+            generatedBody: enriched.artifact.generatedBody,
+            details: enriched.artifact.details,
+          });
+          investigationId = artifact.id;
+        }
+        const finalPolicy = evaluateDecisionPolicy(enriched.decision, args.config, {
           labels: labelsFromPayload(args.payload),
         });
-        result = { ...initialResult, decision, reasons: finalPolicy.reasons };
+        result = { ...initialResult, decision: enriched.decision, reasons: finalPolicy.reasons };
       }
       let publication: 'skipped' | 'published' = 'skipped';
       if (args.loaded && result.status === 'processed' && result.decision && result.reasons.includes('allowed')) {
         publication = await publishDecision({ client: args.loaded.client, state, decision: result.decision });
+        if (investigationId) state.updateInvestigationPublication(investigationId, publication);
         if (
           publication === 'published' &&
           result.decision.type === 'review_pull_request' &&
@@ -143,6 +166,8 @@ export function startGitHubAppServer(options: AppServerOptions): ReturnType<type
             headSha: result.decision.pullRequest.headSha,
           });
         }
+      } else if (investigationId) {
+        state.updateInvestigationPublication(investigationId, 'skipped');
       }
       const status = result.status === 'skipped' ? 'skipped' : 'completed';
       state.completeJob(args.jobId, status);
@@ -150,6 +175,8 @@ export function startGitHubAppServer(options: AppServerOptions): ReturnType<type
         ...buildWebhookDecisionLogEntry({ deliveryId: args.deliveryId, result }),
         jobId: args.jobId,
         publication,
+        ...(investigationId ? { investigationId } : {}),
+        ...(suppressionReason ? { suppressionReason } : {}),
       });
     }
 
@@ -194,6 +221,16 @@ function labelsFromPayload(payload: Parameters<typeof handleGitHubWebhook>[0]['p
     if (typeof label === 'string') return [label];
     return label.name ? [label.name] : [];
   });
+}
+
+function repoFromDecisionOrPayload(
+  decision: AppDecision,
+  payload: Parameters<typeof handleGitHubWebhook>[0]['payload'],
+): string {
+  if (decision.type === 'comment_on_issue') return decision.issue.fullName;
+  if (decision.type === 'review_pull_request') return decision.pullRequest.fullName;
+  if (decision.type === 'update_report') return decision.report.repo.fullName;
+  return payload.repository?.full_name ?? 'unknown/unknown';
 }
 
 function repoRefFromPayload(payload: Parameters<typeof handleGitHubWebhook>[0]['payload']): RepoRef | null {

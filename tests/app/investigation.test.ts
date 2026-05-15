@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { DEFAULT_GITHUB_APP_CONFIG } from '../../src/gardener/app/config.js';
 import {
   enrichDecisionWithInvestigation,
+  enrichDecisionWithInvestigationResult,
   generateIssueInvestigationComment,
   generatePullRequestReviewBody,
 } from '../../src/gardener/app/investigation.js';
@@ -161,6 +162,59 @@ describe('app investigation generation', () => {
     expect(body).toContain('Suggested reproduction checks');
   });
 
+  it('returns persisted-artifact details when issue comments are suppressed', async () => {
+    const maintainerClient: GitHubAppClient = {
+      ...client,
+      async getIssue() {
+        return {
+          number: 2,
+          title: 'Checkout fails',
+          state: 'open',
+          body: 'Checkout fails with a validation error.',
+          url: 'https://github.com/o/r/issues/2',
+          authorLogin: 'maintainer',
+          labels: ['bug'],
+          createdAt: '2026-05-14T00:00:00.000Z',
+          updatedAt: '2026-05-14T00:00:00.000Z',
+          authorAssociation: 'OWNER',
+        };
+      },
+    };
+    const decision: AppDecision = {
+      type: 'comment_on_issue',
+      issue: { ...repo, issueNumber: 2 },
+      marker: { type: 'summary', version: 1 },
+      confidence: 'high',
+      body: 'placeholder',
+    };
+
+    const result = await enrichDecisionWithInvestigationResult({
+      decision,
+      client: maintainerClient,
+      provider: new FakeProvider(),
+      config: DEFAULT_GITHUB_APP_CONFIG,
+    });
+
+    expect(result.decision).toEqual({ type: 'do_nothing', reason: 'maintainer_activity_active' });
+    expect(result.artifact).toEqual(
+      expect.objectContaining({
+        subjectType: 'issue',
+        subjectNumber: 2,
+        status: 'suppressed',
+        suppressionReason: 'maintainer_activity_active',
+        generatedBody: null,
+      }),
+    );
+    expect(result.artifact?.details).toEqual(
+      expect.objectContaining({
+        evaluation: expect.objectContaining({ action: 'defer_because_already_active' }),
+        attentionFacts: expect.objectContaining({
+          maintainerActivity: expect.objectContaining({ status: 'active' }),
+        }),
+      }),
+    );
+  });
+
   it('generates PR review bodies with the completion provider', async () => {
     await expect(
       generatePullRequestReviewBody({
@@ -193,5 +247,39 @@ describe('app investigation generation', () => {
       ...decision,
       reviewBody: expect.stringContaining('## Risk assessment'),
     });
+  });
+
+  it('returns persisted-artifact details for generated PR reviews', async () => {
+    const decision: AppDecision = {
+      type: 'review_pull_request',
+      pullRequest: { ...repo, pullRequestNumber: 1, draft: false, authorLogin: 'dev' },
+      eventType: 'backlog-gardener.pr-review',
+      mode: 'live',
+      reason: 'pull request pull_request.opened',
+    };
+
+    const result = await enrichDecisionWithInvestigationResult({
+      decision,
+      client,
+      provider: new FakeProvider(),
+      config: DEFAULT_GITHUB_APP_CONFIG,
+    });
+
+    expect(result.decision).toEqual({ ...decision, reviewBody: expect.stringContaining('## Risk assessment') });
+    expect(result.artifact).toEqual(
+      expect.objectContaining({
+        subjectType: 'pull_request',
+        subjectNumber: 1,
+        status: 'review_ready',
+        suppressionReason: null,
+        generatedBody: expect.stringContaining('Backlog Gardener automated PR review'),
+      }),
+    );
+    expect(result.artifact?.details).toEqual(
+      expect.objectContaining({
+        output: expect.objectContaining({ summary: 'Generated PR review summary.' }),
+        files: [expect.objectContaining({ filename: 'src/checkout.ts' })],
+      }),
+    );
   });
 });

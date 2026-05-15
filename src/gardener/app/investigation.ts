@@ -22,12 +22,33 @@ interface PrReviewOutput {
 export interface IssueInvestigationResult {
   item: Item;
   replies: Reply[];
+  relatedIssues: GitHubIssueSummary[];
   attentionFacts: AttentionFacts;
   finding: Finding;
   evaluation: EvaluationRecord;
   verification: VerificationRecord;
   shouldComment: boolean;
   commentBody: string | null;
+}
+
+export interface DecisionInvestigationArtifact {
+  subjectType: 'issue' | 'pull_request';
+  subjectNumber: number;
+  status: 'comment_ready' | 'review_ready' | 'suppressed' | 'no_output';
+  suppressionReason: string | null;
+  generatedBody: string | null;
+  details: Record<string, unknown>;
+}
+
+export interface EnrichedDecisionResult {
+  decision: AppDecision;
+  artifact: DecisionInvestigationArtifact | null;
+}
+
+interface PullRequestReviewGenerationResult {
+  body: string;
+  output: PrReviewOutput;
+  files: GitHubPullRequestFileSummary[];
 }
 
 export async function investigateIssueWithPipeline(args: {
@@ -126,6 +147,7 @@ export async function investigateIssueWithPipeline(args: {
   return {
     item,
     replies,
+    relatedIssues,
     attentionFacts,
     finding,
     evaluation,
@@ -157,6 +179,17 @@ export async function generatePullRequestReviewBody(args: {
   repo: string;
   pullNumber: number;
 }): Promise<string | null> {
+  const result = await generatePullRequestReviewResult(args);
+  return result?.body ?? null;
+}
+
+async function generatePullRequestReviewResult(args: {
+  client: GitHubAppClient;
+  provider: CompletionProvider;
+  owner: string;
+  repo: string;
+  pullNumber: number;
+}): Promise<PullRequestReviewGenerationResult | null> {
   if (!args.client.getPullRequest || !args.client.listPullRequestFiles) return null;
   const pr = await args.client.getPullRequest({ owner: args.owner, repo: args.repo, pullNumber: args.pullNumber });
   const repoGuidance = await loadRepoGuidance(args.client, args.owner, args.repo);
@@ -185,7 +218,7 @@ export async function generatePullRequestReviewBody(args: {
     maxTokens: 1600,
     timeoutMs: 60_000,
   });
-  return renderStructuredPrReview(result.output);
+  return { body: renderStructuredPrReview(result.output), output: result.output, files };
 }
 
 export async function enrichDecisionWithInvestigation(args: {
@@ -195,8 +228,18 @@ export async function enrichDecisionWithInvestigation(args: {
   config: GitHubAppConfig;
   codeRoot?: string;
 }): Promise<AppDecision> {
+  return (await enrichDecisionWithInvestigationResult(args)).decision;
+}
+
+export async function enrichDecisionWithInvestigationResult(args: {
+  decision: AppDecision;
+  client: GitHubAppClient;
+  provider: CompletionProvider;
+  config: GitHubAppConfig;
+  codeRoot?: string;
+}): Promise<EnrichedDecisionResult> {
   if (args.decision.type === 'comment_on_issue') {
-    const body = await generateIssueInvestigationComment({
+    const result = await investigateIssueWithPipeline({
       client: args.client,
       provider: args.provider,
       config: args.config,
@@ -205,19 +248,78 @@ export async function enrichDecisionWithInvestigation(args: {
       issueNumber: args.decision.issue.issueNumber,
       ...(args.codeRoot ? { codeRoot: args.codeRoot } : {}),
     });
-    return body ? { ...args.decision, body } : { type: 'do_nothing', reason: 'investigation_decided_no_comment' };
+    if (!result) {
+      return {
+        decision: { type: 'do_nothing', reason: 'investigation_unavailable' },
+        artifact: {
+          subjectType: 'issue',
+          subjectNumber: args.decision.issue.issueNumber,
+          status: 'no_output',
+          suppressionReason: 'investigation_unavailable',
+          generatedBody: null,
+          details: {},
+        },
+      };
+    }
+    const artifact: DecisionInvestigationArtifact = {
+      subjectType: 'issue',
+      subjectNumber: args.decision.issue.issueNumber,
+      status: result.commentBody ? 'comment_ready' : 'suppressed',
+      suppressionReason: result.commentBody ? null : issueSuppressionReason(result),
+      generatedBody: result.commentBody,
+      details: issueArtifactDetails(result),
+    };
+    return {
+      decision: result.commentBody
+        ? { ...args.decision, body: result.commentBody }
+        : { type: 'do_nothing', reason: artifact.suppressionReason ?? 'investigation_decided_no_comment' },
+      artifact,
+    };
   }
   if (args.decision.type === 'review_pull_request') {
-    const reviewBody = await generatePullRequestReviewBody({
+    const result = await generatePullRequestReviewResult({
       client: args.client,
       provider: args.provider,
       owner: args.decision.pullRequest.owner,
       repo: args.decision.pullRequest.repo,
       pullNumber: args.decision.pullRequest.pullRequestNumber,
     });
-    return reviewBody ? { ...args.decision, reviewBody: renderPrReviewBody(reviewBody) } : args.decision;
+    if (!result) {
+      return {
+        decision: args.decision,
+        artifact: {
+          subjectType: 'pull_request',
+          subjectNumber: args.decision.pullRequest.pullRequestNumber,
+          status: 'no_output',
+          suppressionReason: 'review_generation_unavailable',
+          generatedBody: null,
+          details: {},
+        },
+      };
+    }
+    const reviewBody = renderPrReviewBody(result.body);
+    return {
+      decision: { ...args.decision, reviewBody },
+      artifact: {
+        subjectType: 'pull_request',
+        subjectNumber: args.decision.pullRequest.pullRequestNumber,
+        status: 'review_ready',
+        suppressionReason: null,
+        generatedBody: reviewBody,
+        details: {
+          output: result.output,
+          files: result.files.map((file) => ({
+            filename: file.filename,
+            status: file.status,
+            additions: file.additions,
+            deletions: file.deletions,
+            changes: file.changes,
+          })),
+        },
+      },
+    };
   }
-  return args.decision;
+  return { decision: args.decision, artifact: null };
 }
 
 function githubIssueToItem(args: {
@@ -275,6 +377,56 @@ function githubCommentToReply(
       linkedOpenPrUrls: linkedOpenPrUrls(body),
     },
     raw: comment,
+  };
+}
+
+function issueSuppressionReason(result: IssueInvestigationResult): string {
+  if (result.attentionFacts.protectedLabel.present) return 'protected_label';
+  if (result.attentionFacts.maintainerActivity.status === 'active') return 'maintainer_activity_active';
+  if (
+    result.evaluation.action !== 'request_more_info' &&
+    result.evaluation.action !== 'accept_for_developer_attention'
+  ) {
+    return `evaluation_action_${result.evaluation.action}`;
+  }
+  return 'no_comment_body';
+}
+
+function issueArtifactDetails(result: IssueInvestigationResult): Record<string, unknown> {
+  return {
+    item: {
+      sourceId: result.item.sourceId,
+      title: result.item.title,
+      url: result.item.url,
+      author: result.item.author,
+    },
+    attentionFacts: result.attentionFacts,
+    recap: result.finding.recap,
+    evaluation: {
+      action: result.evaluation.action,
+      confidence: result.evaluation.confidence,
+      reason: result.evaluation.reason,
+      developerSummary: result.evaluation.developerSummary,
+      recommendedNextStep: result.evaluation.recommendedNextStep,
+      proposedExternalComment: result.evaluation.proposedExternalComment,
+      riskFlags: result.evaluation.riskFlags,
+    },
+    verification: {
+      action: result.verification.action,
+      confidence: result.verification.confidence,
+      subsystem: result.verification.subsystem,
+      likelyFiles: result.verification.likelyFiles,
+      hypotheses: result.verification.hypotheses,
+      suggestedReproSteps: result.verification.suggestedReproSteps,
+      suggestedTests: result.verification.suggestedTests,
+      developerNotes: result.verification.developerNotes,
+    },
+    relatedIssues: result.relatedIssues.map((issue) => ({
+      number: issue.number,
+      title: issue.title,
+      state: issue.state,
+      url: issue.url,
+    })),
   };
 }
 

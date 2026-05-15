@@ -102,6 +102,27 @@ export interface DecisionRecord {
   createdAt: string;
 }
 
+export type AppInvestigationSubjectType = 'issue' | 'pull_request';
+export type AppInvestigationStatus = 'comment_ready' | 'review_ready' | 'suppressed' | 'no_output';
+export type AppPublicationStatus = 'pending' | 'published' | 'skipped' | 'failed';
+
+export interface AppInvestigationArtifactRecord {
+  id: string;
+  jobId: string | null;
+  runId: string | null;
+  deliveryId: string | null;
+  repo: string;
+  subjectType: AppInvestigationSubjectType;
+  subjectNumber: number;
+  status: AppInvestigationStatus;
+  suppressionReason: string | null;
+  publicationStatus: AppPublicationStatus | null;
+  generatedBody: string | null;
+  details: Record<string, unknown>;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface BotCommentRecord {
   installationId: number;
   repo: string;

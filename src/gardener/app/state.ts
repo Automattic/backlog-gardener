@@ -3,7 +3,9 @@ import { createHash } from 'node:crypto';
 import { newId, nowIso } from '../ids.js';
 import type { DatabaseHandle } from '../store/db.js';
 import type {
+  AppInvestigationArtifactRecord,
   AppJobRecord,
+  AppPublicationStatus,
   AppRunRecord,
   AppTrigger,
   BotCommentRecord,
@@ -39,6 +41,20 @@ export interface RecordDecisionArgs {
   policyReasons: string[];
 }
 
+export interface RecordInvestigationArtifactArgs {
+  jobId?: string | null;
+  runId?: string | null;
+  deliveryId?: string | null;
+  repo: string;
+  subjectType: AppInvestigationArtifactRecord['subjectType'];
+  subjectNumber: number;
+  status: AppInvestigationArtifactRecord['status'];
+  suppressionReason?: string | null;
+  publicationStatus?: AppPublicationStatus | null;
+  generatedBody?: string | null;
+  details: Record<string, unknown>;
+}
+
 export interface AppStateStore {
   hasProcessedDelivery(deliveryId: string): boolean;
   recordDelivery(deliveryId: string): void;
@@ -49,6 +65,9 @@ export interface AppStateStore {
   completeRun(runId: string, status: 'completed' | 'failed' | 'skipped', error?: string | null): void;
   recordDecision(args: RecordDecisionArgs): DecisionRecord;
   listDecisions(runId?: string): DecisionRecord[];
+  recordInvestigationArtifact(args: RecordInvestigationArtifactArgs): AppInvestigationArtifactRecord;
+  updateInvestigationPublication(id: string, status: AppPublicationStatus): void;
+  listInvestigationArtifacts(runId?: string): AppInvestigationArtifactRecord[];
   upsertBotComment(record: BotCommentRecord): void;
   findBotComment(args: {
     installationId: number;
@@ -84,6 +103,7 @@ export class InMemoryAppStateStore implements AppStateStore {
   private jobs = new Map<string, AppJobRecord>();
   private runs = new Map<string, AppRunRecord>();
   private decisions: DecisionRecord[] = [];
+  private investigations: AppInvestigationArtifactRecord[] = [];
   private botComments = new Map<string, BotCommentRecord>();
   private cooldowns = new Map<string, CooldownRecord>();
   private reviewedPullRequests = new Set<string>();
@@ -168,6 +188,38 @@ export class InMemoryAppStateStore implements AppStateStore {
 
   listDecisions(runId?: string): DecisionRecord[] {
     return this.decisions.filter((decision) => !runId || decision.runId === runId);
+  }
+
+  recordInvestigationArtifact(args: RecordInvestigationArtifactArgs): AppInvestigationArtifactRecord {
+    const now = nowIso();
+    const record: AppInvestigationArtifactRecord = {
+      id: newId('app_inv'),
+      jobId: args.jobId ?? null,
+      runId: args.runId ?? null,
+      deliveryId: args.deliveryId ?? null,
+      repo: args.repo,
+      subjectType: args.subjectType,
+      subjectNumber: args.subjectNumber,
+      status: args.status,
+      suppressionReason: args.suppressionReason ?? null,
+      publicationStatus: args.publicationStatus ?? null,
+      generatedBody: args.generatedBody ?? null,
+      details: args.details,
+      createdAt: now,
+      updatedAt: now,
+    };
+    this.investigations.push(record);
+    return record;
+  }
+
+  updateInvestigationPublication(id: string, status: AppPublicationStatus): void {
+    this.investigations = this.investigations.map((record) =>
+      record.id === id ? { ...record, publicationStatus: status, updatedAt: nowIso() } : record,
+    );
+  }
+
+  listInvestigationArtifacts(runId?: string): AppInvestigationArtifactRecord[] {
+    return this.investigations.filter((record) => !runId || record.runId === runId);
   }
 
   upsertBotComment(record: BotCommentRecord): void {
@@ -266,6 +318,24 @@ export class SqliteAppStateStore implements AppStateStore {
         policy_reasons_json TEXT NOT NULL,
         created_at TEXT NOT NULL
       );
+      CREATE TABLE IF NOT EXISTS app_investigations (
+        id TEXT PRIMARY KEY,
+        job_id TEXT,
+        run_id TEXT,
+        delivery_id TEXT,
+        repo TEXT NOT NULL,
+        subject_type TEXT NOT NULL,
+        subject_number INTEGER NOT NULL,
+        status TEXT NOT NULL,
+        suppression_reason TEXT,
+        publication_status TEXT,
+        generated_body TEXT,
+        details_json TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_app_investigations_run_id ON app_investigations(run_id);
+      CREATE INDEX IF NOT EXISTS idx_app_investigations_subject ON app_investigations(repo, subject_type, subject_number);
       CREATE TABLE IF NOT EXISTS app_bot_comments (
         installation_id INTEGER NOT NULL,
         repo TEXT NOT NULL,
@@ -442,6 +512,65 @@ export class SqliteAppStateStore implements AppStateStore {
     return rows.map(decisionFromRow);
   }
 
+  recordInvestigationArtifact(args: RecordInvestigationArtifactArgs): AppInvestigationArtifactRecord {
+    const now = nowIso();
+    const record: AppInvestigationArtifactRecord = {
+      id: newId('app_inv'),
+      jobId: args.jobId ?? null,
+      runId: args.runId ?? null,
+      deliveryId: args.deliveryId ?? null,
+      repo: args.repo,
+      subjectType: args.subjectType,
+      subjectNumber: args.subjectNumber,
+      status: args.status,
+      suppressionReason: args.suppressionReason ?? null,
+      publicationStatus: args.publicationStatus ?? null,
+      generatedBody: args.generatedBody ?? null,
+      details: args.details,
+      createdAt: now,
+      updatedAt: now,
+    };
+    this.db
+      .prepare(
+        `
+      INSERT INTO app_investigations (id, job_id, run_id, delivery_id, repo, subject_type, subject_number, status, suppression_reason, publication_status, generated_body, details_json, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `,
+      )
+      .run(
+        record.id,
+        record.jobId,
+        record.runId,
+        record.deliveryId,
+        record.repo,
+        record.subjectType,
+        record.subjectNumber,
+        record.status,
+        record.suppressionReason,
+        record.publicationStatus,
+        record.generatedBody,
+        JSON.stringify(record.details),
+        record.createdAt,
+        record.updatedAt,
+      );
+    return record;
+  }
+
+  updateInvestigationPublication(id: string, status: AppPublicationStatus): void {
+    this.db
+      .prepare('UPDATE app_investigations SET publication_status = ?, updated_at = ? WHERE id = ?')
+      .run(status, nowIso(), id);
+  }
+
+  listInvestigationArtifacts(runId?: string): AppInvestigationArtifactRecord[] {
+    const rows = (
+      runId
+        ? this.db.prepare('SELECT * FROM app_investigations WHERE run_id = ? ORDER BY created_at ASC').all(runId)
+        : this.db.prepare('SELECT * FROM app_investigations ORDER BY created_at ASC').all()
+    ) as Array<Record<string, unknown>>;
+    return rows.map(investigationArtifactFromRow);
+  }
+
   upsertBotComment(record: BotCommentRecord): void {
     this.db
       .prepare(
@@ -598,6 +727,25 @@ function decisionFromRow(row: Record<string, unknown>): DecisionRecord {
     policyAllowed: Number(row.policy_allowed) === 1,
     policyReasons: typeof row.policy_reasons_json === 'string' ? (JSON.parse(row.policy_reasons_json) as string[]) : [],
     createdAt: String(row.created_at),
+  };
+}
+
+function investigationArtifactFromRow(row: Record<string, unknown>): AppInvestigationArtifactRecord {
+  return {
+    id: String(row.id),
+    jobId: row.job_id === null ? null : String(row.job_id),
+    runId: row.run_id === null ? null : String(row.run_id),
+    deliveryId: row.delivery_id === null ? null : String(row.delivery_id),
+    repo: String(row.repo),
+    subjectType: row.subject_type as AppInvestigationArtifactRecord['subjectType'],
+    subjectNumber: Number(row.subject_number),
+    status: row.status as AppInvestigationArtifactRecord['status'],
+    suppressionReason: row.suppression_reason === null ? null : String(row.suppression_reason),
+    publicationStatus: row.publication_status === null ? null : (row.publication_status as AppPublicationStatus),
+    generatedBody: row.generated_body === null ? null : String(row.generated_body),
+    details: typeof row.details_json === 'string' ? (JSON.parse(row.details_json) as Record<string, unknown>) : {},
+    createdAt: String(row.created_at),
+    updatedAt: String(row.updated_at),
   };
 }
 

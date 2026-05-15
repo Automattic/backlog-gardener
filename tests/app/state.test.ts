@@ -44,6 +44,25 @@ describe('SqliteAppStateStore', () => {
     });
     expect(state.listDecisions(run.id)[0]).toEqual(expect.objectContaining({ decisionType: 'comment_on_issue' }));
 
+    const artifact = state.recordInvestigationArtifact({
+      jobId: job.id,
+      runId: run.id,
+      deliveryId: 'delivery-1',
+      repo: 'o/r',
+      subjectType: 'issue',
+      subjectNumber: 2,
+      status: 'suppressed',
+      suppressionReason: 'maintainer_activity_active',
+      publicationStatus: 'skipped',
+      generatedBody: null,
+      details: { evaluationAction: 'request_more_info' },
+    });
+    expect(state.listInvestigationArtifacts(run.id)[0]).toEqual(
+      expect.objectContaining({ id: artifact.id, suppressionReason: 'maintainer_activity_active' }),
+    );
+    state.updateInvestigationPublication(artifact.id, 'published');
+    expect(state.listInvestigationArtifacts(run.id)[0]?.publicationStatus).toBe('published');
+
     state.upsertBotComment({
       installationId: 1,
       repo: 'o/r',
