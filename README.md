@@ -28,7 +28,7 @@ pnpm gardener github-app exchange-code <code>
 pnpm gardener github-app doctor
 ```
 
-GitHub App behavior is target-repo driven through `.github/gardener.yml`, with optional review/triage guidance in root `.gardener.md`. See [`docs/github-app.md`](docs/github-app.md).
+GitHub App behavior is target-repo driven through `.github/gardener.yml`, with optional review/triage guidance in root `.gardener.md`. See [`docs/github-app.md`](docs/github-app.md) for configuration and [`docs/github-app-operations.md`](docs/github-app-operations.md) for setup/operations.
 
 An example profile lives at `.gardener/products/example-product.yml`. It supports per-role completion settings, including model and thinking effort for `triage`, `evaluator`, and `verifier` under `llm.roles`.
 
