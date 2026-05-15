@@ -142,6 +142,7 @@ export async function runGitHubAppDoctor(args: {
   appId?: string;
   privateKey?: string;
   webhookSecret?: string;
+  repo?: string;
   fetchImpl?: typeof fetch;
   apiBaseUrl?: string;
 }): Promise<DoctorResult> {
@@ -164,18 +165,23 @@ export async function runGitHubAppDoctor(args: {
     try {
       const jwt = createGitHubAppJwt({ appId, privateKey: normalizePrivateKey(privateKey) });
       const fetchImpl = args.fetchImpl ?? fetch;
-      const response = await fetchImpl(`${args.apiBaseUrl ?? 'https://api.github.com'}/app`, {
-        headers: {
-          Authorization: `Bearer ${jwt}`,
-          Accept: 'application/vnd.github+json',
-          'X-GitHub-Api-Version': '2022-11-28',
-        },
+      const apiBaseUrl = args.apiBaseUrl ?? 'https://api.github.com';
+      const headers = {
+        Authorization: `Bearer ${jwt}`,
+        Accept: 'application/vnd.github+json',
+        'X-GitHub-Api-Version': '2022-11-28',
+      };
+      const response = await fetchImpl(`${apiBaseUrl}/app`, {
+        headers,
       });
       checks.push({
         name: 'GitHub App API authentication',
         ok: response.ok,
         message: response.ok ? 'authenticated' : `failed with HTTP ${response.status}`,
       });
+      if (response.ok && args.repo) {
+        checks.push(...(await repoInstallationChecks({ repo: args.repo, fetchImpl, apiBaseUrl, headers })));
+      }
     } catch (error) {
       checks.push({
         name: 'GitHub App API authentication',
@@ -185,6 +191,100 @@ export async function runGitHubAppDoctor(args: {
     }
   }
   return { ok: checks.every((check) => check.ok), checks };
+}
+
+async function repoInstallationChecks(args: {
+  repo: string;
+  fetchImpl: typeof fetch;
+  apiBaseUrl: string;
+  headers: Record<string, string>;
+}): Promise<DoctorResult['checks']> {
+  const checks: DoctorResult['checks'] = [];
+  const [owner, repo] = args.repo.split('/');
+  if (!owner || !repo) return [{ name: 'Repository format', ok: false, message: 'expected owner/repo' }];
+  const installationsResponse = await args.fetchImpl(`${args.apiBaseUrl}/app/installations`, { headers: args.headers });
+  if (!installationsResponse.ok) {
+    return [
+      {
+        name: `Installation access for ${args.repo}`,
+        ok: false,
+        message: `could not list installations: HTTP ${installationsResponse.status}`,
+      },
+    ];
+  }
+  const installations = (await installationsResponse.json()) as Array<{ id?: number; account?: { login?: string } }>;
+  for (const installation of installations) {
+    if (!installation.id) continue;
+    const tokenResponse = await args.fetchImpl(
+      `${args.apiBaseUrl}/app/installations/${installation.id}/access_tokens`,
+      { method: 'POST', headers: args.headers },
+    );
+    if (!tokenResponse.ok) continue;
+    const token = (await tokenResponse.json()) as { token?: string };
+    if (!token.token) continue;
+    const repoResponse = await args.fetchImpl(`${args.apiBaseUrl}/repos/${owner}/${repo}/installation`, {
+      headers: {
+        Authorization: `Bearer ${token.token}`,
+        Accept: 'application/vnd.github+json',
+        'X-GitHub-Api-Version': '2022-11-28',
+      },
+    });
+    if (repoResponse.ok) {
+      checks.push({
+        name: `Installation access for ${args.repo}`,
+        ok: true,
+        message: `installed via installation ${installation.id}`,
+      });
+      checks.push(...(await repoPermissionChecks({ ...args, owner, repo, token: token.token })));
+      return checks;
+    }
+  }
+  checks.push({ name: `Installation access for ${args.repo}`, ok: false, message: 'app is not installed on repo' });
+  return checks;
+}
+
+async function repoPermissionChecks(args: {
+  fetchImpl: typeof fetch;
+  apiBaseUrl: string;
+  owner: string;
+  repo: string;
+  token: string;
+}): Promise<DoctorResult['checks']> {
+  const headers = {
+    Authorization: `Bearer ${args.token}`,
+    Accept: 'application/vnd.github+json',
+    'X-GitHub-Api-Version': '2022-11-28',
+  };
+  const configResponse = await args.fetchImpl(
+    `${args.apiBaseUrl}/repos/${args.owner}/${args.repo}/contents/.github/gardener.yml`,
+    { headers },
+  );
+  const guidanceResponse = await args.fetchImpl(
+    `${args.apiBaseUrl}/repos/${args.owner}/${args.repo}/contents/.gardener.md`,
+    {
+      headers,
+    },
+  );
+  return [
+    {
+      name: '.github/gardener.yml access',
+      ok: configResponse.ok || configResponse.status === 404,
+      message: configResponse.ok
+        ? 'readable'
+        : configResponse.status === 404
+          ? 'not found; defaults disabled'
+          : `failed with HTTP ${configResponse.status}`,
+    },
+    {
+      name: '.gardener.md access',
+      ok: guidanceResponse.ok || guidanceResponse.status === 404,
+      message: guidanceResponse.ok
+        ? 'readable'
+        : guidanceResponse.status === 404
+          ? 'not found; optional'
+          : `failed with HTTP ${guidanceResponse.status}`,
+    },
+  ];
 }
 
 export function normalizePrivateKey(value: string): string {

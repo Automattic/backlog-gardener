@@ -255,9 +255,10 @@ export function buildProgram(deps: CliDependencies = {}): Command {
   githubApp
     .command('doctor')
     .description('validate local GitHub App credentials and API authentication')
+    .option('--repo <owner/repo>', 'also verify installation and file access for a repository')
     .option('--json', 'emit machine-readable JSON')
-    .action(async (opts: { json?: boolean }) => {
-      const result = await runGitHubAppDoctor({});
+    .action(async (opts: { repo?: string; json?: boolean }) => {
+      const result = await runGitHubAppDoctor({ ...(opts.repo ? { repo: opts.repo } : {}) });
       if (opts.json) {
         process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
       } else {
