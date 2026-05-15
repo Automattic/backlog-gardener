@@ -35,25 +35,6 @@ describe('GitHubRestAppClient', () => {
     expect(calls[0]).toContain('/repos/example-org/example-product/contents/.github/gardener.yml');
   });
 
-  it('falls back to legacy config path', async () => {
-    const yaml = Buffer.from('enabled: true\nproduct:\n  slug: legacy\n  name: Legacy\n').toString('base64');
-    const calls: string[] = [];
-    const client = new GitHubRestAppClient({
-      token: 'token',
-      fetchImpl: async (url) => {
-        calls.push(String(url));
-        if (String(url).includes('.github/gardener.yml')) return jsonResponse({ message: 'Not Found' }, 404);
-        return jsonResponse({ type: 'file', encoding: 'base64', content: yaml });
-      },
-    });
-
-    const config = await fetchRepoGitHubAppConfig({ client, repo });
-
-    expect(config.enabled).toBe(true);
-    expect(config.product.slug).toBe('legacy');
-    expect(calls[1]).toContain('/repos/example-org/example-product/contents/.github/backlog-gardener.yml');
-  });
-
   it('defaults missing config to disabled mode', async () => {
     const client = new GitHubRestAppClient({
       token: 'token',

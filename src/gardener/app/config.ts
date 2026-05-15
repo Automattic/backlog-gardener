@@ -128,36 +128,5 @@ export const DEFAULT_GITHUB_APP_CONFIG: GitHubAppConfig = GitHubAppConfigSchema.
 
 export function parseGitHubAppConfig(source: string | null | undefined): GitHubAppConfig {
   if (!source?.trim()) return DEFAULT_GITHUB_APP_CONFIG;
-  const parsed = normalizeLegacyConfig(YAML.parse(source) as Record<string, unknown> | null | undefined);
-  return GitHubAppConfigSchema.parse(parsed ?? {});
-}
-
-function normalizeLegacyConfig(config: Record<string, unknown> | null | undefined): Record<string, unknown> {
-  if (!config) return {};
-  const normalized: Record<string, unknown> = { ...config };
-  const pullRequests = normalized.pullRequests as Record<string, unknown> | undefined;
-  if (pullRequests && !normalized.prReviews) {
-    const reviews = pullRequests.reviews as Record<string, unknown> | undefined;
-    normalized.prReviews = {
-      enabled: reviews?.enabled ?? pullRequests.enabled,
-      liveMode: reviews?.liveMode,
-      includeDrafts: pullRequests.includeDrafts,
-      triggers: pullRequests.triggers,
-    };
-  }
-  delete normalized.pullRequests;
-
-  const issues = normalized.issues as Record<string, unknown> | undefined;
-  const comments = issues?.comments as Record<string, unknown> | undefined;
-  if (issues && comments) {
-    normalized.issues = { ...issues, enabled: issues.enabled ?? comments.enabled };
-    const actions = (normalized.actions as Record<string, unknown> | undefined) ?? {};
-    normalized.actions = { ...actions, issueComments: actions.issueComments ?? comments.enabled };
-    const thresholds = (normalized.thresholds as Record<string, unknown> | undefined) ?? {};
-    normalized.thresholds = {
-      ...thresholds,
-      minCommentConfidence: thresholds.minCommentConfidence ?? comments.minConfidence,
-    };
-  }
-  return normalized;
+  return GitHubAppConfigSchema.parse((YAML.parse(source) as Record<string, unknown> | null | undefined) ?? {});
 }

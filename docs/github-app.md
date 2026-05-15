@@ -2,13 +2,31 @@
 
 Gardener is configured by each target repository. The app supplies defaults, schema validation, and safety floors; the repository decides which safe behaviours are enabled.
 
+## Setup CLI
+
+Use the manifest flow to avoid manually clicking through every GitHub App setting:
+
+```sh
+pnpm gardener github-app manifest-url \
+  --org Automattic \
+  --name "Backlog Gardener" \
+  --webhook-url https://example-tunnel.example/webhooks/github
+```
+
+Open the printed URL, approve the GitHub App creation, then exchange the returned temporary code:
+
+```sh
+pnpm gardener github-app exchange-code <code>
+pnpm gardener github-app doctor
+```
+
+`exchange-code` writes `GARDENER_APP_ID`, `GARDENER_APP_PRIVATE_KEY`, and `GARDENER_APP_WEBHOOK_SECRET` to `.env`. Installing the app on repositories or approving org-level access still happens in GitHub.
+
 ## Files
 
 ### `.github/gardener.yml`
 
 Machine-readable app configuration. This is the primary config file for GitHub App behaviour.
-
-For transition only, `.github/backlog-gardener.yml` is still read as a legacy fallback when `.github/gardener.yml` is absent.
 
 ### `.gardener.md`
 

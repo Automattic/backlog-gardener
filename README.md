@@ -15,7 +15,18 @@ pnpm gardener run --help
 pnpm test
 ```
 
-## GitHub App repo configuration
+## GitHub App setup and repo configuration
+
+Generate a GitHub App manifest URL and exchange the returned code for local credentials:
+
+```sh
+pnpm gardener github-app manifest-url \
+  --org Automattic \
+  --name "Backlog Gardener" \
+  --webhook-url https://example-tunnel.example/webhooks/github
+pnpm gardener github-app exchange-code <code>
+pnpm gardener github-app doctor
+```
 
 GitHub App behavior is target-repo driven through `.github/gardener.yml`, with optional review/triage guidance in root `.gardener.md`. See [`docs/github-app.md`](docs/github-app.md).
 

@@ -309,20 +309,13 @@ export async function fetchRepoGitHubAppConfig(args: {
     });
     return parseGitHubAppConfig(source);
   }
-  const primary = await args.client.fetchTextFile({
+  const source = await args.client.fetchTextFile({
     owner: args.repo.owner,
     repo: args.repo.repo,
     path: '.github/gardener.yml',
     ...(args.ref ? { ref: args.ref } : {}),
   });
-  if (primary?.trim()) return parseGitHubAppConfig(primary);
-  const legacy = await args.client.fetchTextFile({
-    owner: args.repo.owner,
-    repo: args.repo.repo,
-    path: '.github/backlog-gardener.yml',
-    ...(args.ref ? { ref: args.ref } : {}),
-  });
-  return parseGitHubAppConfig(legacy);
+  return parseGitHubAppConfig(source);
 }
 
 export class GitHubApiError extends Error {

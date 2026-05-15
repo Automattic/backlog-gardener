@@ -241,17 +241,17 @@ async function createClientAndConfig(
   repo: RepoRef,
   ref?: string,
 ): Promise<{ client: GitHubRestAppClient; config: GitHubAppConfig }> {
-  const appId = process.env.GITHUB_APP_ID;
-  const privateKey = process.env.GITHUB_PRIVATE_KEY?.replaceAll('\\n', '\n');
-  if (!appId || !privateKey) throw new Error('GITHUB_APP_ID and GITHUB_PRIVATE_KEY are required');
+  const appId = process.env.GARDENER_APP_ID;
+  const privateKey = process.env.GARDENER_APP_PRIVATE_KEY?.replaceAll('\\n', '\n');
+  if (!appId || !privateKey) throw new Error('GARDENER_APP_ID and GARDENER_APP_PRIVATE_KEY are required');
   const token = await createInstallationToken({ appId, privateKey, installationId: repo.installationId });
   const client = new GitHubRestAppClient({ token: token.token });
   return { client, config: await fetchRepoGitHubAppConfig({ client, repo, ...(ref ? { ref } : {}) }) };
 }
 
 if (process.argv[1]?.endsWith('/server.ts') || process.argv[1]?.endsWith('/server.js')) {
-  const webhookSecret = process.env.GITHUB_WEBHOOK_SECRET;
-  if (!webhookSecret) throw new Error('GITHUB_WEBHOOK_SECRET is required');
+  const webhookSecret = process.env.GARDENER_APP_WEBHOOK_SECRET;
+  if (!webhookSecret) throw new Error('GARDENER_APP_WEBHOOK_SECRET is required');
   const port = process.env.PORT ? Number.parseInt(process.env.PORT, 10) : 3000;
   startGitHubAppServer({
     port,

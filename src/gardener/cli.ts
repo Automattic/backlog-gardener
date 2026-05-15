@@ -6,6 +6,14 @@ import { Command, Option } from 'commander';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import {
+  buildGitHubAppManifest,
+  buildGitHubOrgAppManifestUrl,
+  convertGitHubAppManifestCode,
+  envUpdatesFromManifestConversion,
+  runGitHubAppDoctor,
+  writeEnvUpdates,
+} from './app/setup.js';
 import { importFeedback, markFeedback } from './feedback/commands.js';
 import { createCompletionProvider, createCompletionProviderForRole, createEmbeddingProvider } from './llm/factory.js';
 import { parseLookback, runBackfill, renderBackfillSummary } from './pipeline/backfill.js';
@@ -172,6 +180,86 @@ export function buildProgram(deps: CliDependencies = {}): Command {
     .action((opts: { state: string; json?: boolean }) => {
       const summary = readStatus(opts.state);
       process.stdout.write(opts.json ? `${JSON.stringify(summary, null, 2)}\n` : renderStatus(summary));
+    });
+
+  const githubApp = program.command('github-app').description('set up and validate the Gardener GitHub App');
+
+  githubApp
+    .command('manifest-url')
+    .description('print a GitHub App manifest creation URL')
+    .requiredOption('--name <name>', 'GitHub App name')
+    .requiredOption('--webhook-url <url>', 'public webhook URL ending in /webhooks/github')
+    .option('--homepage-url <url>', 'GitHub App homepage URL', 'https://github.com/Automattic/backlog-gardener')
+    .option('--description <text>', 'GitHub App description')
+    .option('--org <org>', 'create the app under a GitHub organization instead of the current user')
+    .option('--public', 'allow anyone to install the GitHub App')
+    .option('--json', 'emit machine-readable JSON')
+    .action(
+      (opts: {
+        name: string;
+        webhookUrl: string;
+        homepageUrl: string;
+        description?: string;
+        org?: string;
+        public?: boolean;
+        json?: boolean;
+      }) => {
+        const result = buildGitHubAppManifest({
+          name: opts.name,
+          webhookUrl: opts.webhookUrl,
+          url: opts.homepageUrl,
+          ...(opts.description ? { description: opts.description } : {}),
+          public: Boolean(opts.public),
+        });
+        const url = opts.org ? buildGitHubOrgAppManifestUrl(opts.org, result.manifest) : result.url;
+        if (opts.json) {
+          process.stdout.write(`${JSON.stringify({ url, manifest: result.manifest }, null, 2)}\n`);
+          return;
+        }
+        process.stdout.write(`Open this URL to create the GitHub App:\n${url}\n\n`);
+        process.stdout.write('After approving it, GitHub redirects with a temporary code. Run:\n');
+        process.stdout.write('pnpm gardener github-app exchange-code <code>\n');
+      },
+    );
+
+  githubApp
+    .command('exchange-code')
+    .description('exchange a GitHub App manifest code and write local .env credentials')
+    .argument('<code>', 'temporary code returned by the GitHub App manifest flow')
+    .option('--env <path>', 'env file to update', '.env')
+    .option('--json', 'emit machine-readable JSON')
+    .action(async (code: string, opts: { env: string; json?: boolean }) => {
+      const conversion = await convertGitHubAppManifestCode({ code });
+      const updates = envUpdatesFromManifestConversion(conversion);
+      await writeEnvUpdates(opts.env, updates);
+      const summary = {
+        appId: conversion.id,
+        slug: conversion.slug ?? null,
+        url: conversion.html_url ?? null,
+        envPath: opts.env,
+        wrote: updates.map((update) => update.key),
+      };
+      process.stdout.write(
+        opts.json
+          ? `${JSON.stringify(summary, null, 2)}\n`
+          : `Configured GitHub App ${conversion.slug ?? conversion.id}. Updated ${opts.env}.\n`,
+      );
+    });
+
+  githubApp
+    .command('doctor')
+    .description('validate local GitHub App credentials and API authentication')
+    .option('--json', 'emit machine-readable JSON')
+    .action(async (opts: { json?: boolean }) => {
+      const result = await runGitHubAppDoctor({});
+      if (opts.json) {
+        process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
+      } else {
+        for (const check of result.checks) {
+          process.stdout.write(`${check.ok ? '✓' : '✗'} ${check.name}: ${check.message}\n`);
+        }
+      }
+      if (!result.ok) process.exitCode = 1;
     });
 
   const feedback = program.command('feedback').description('record or import human review feedback');

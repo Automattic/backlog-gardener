@@ -30,16 +30,17 @@ code:
   checkout: true
   branch: trunk
 issues:
+  enabled: true
   comments:
     enabled: true
     minConfidence: medium
   includeRelatedIssues: false
   verifyWithCode: false
-pullRequests:
+actions:
+  issueComments: true
+prReviews:
   enabled: true
-  reviews:
-    enabled: true
-    liveMode: false
+  liveMode: false
   triggers:
     synchronize: true
 controls:
