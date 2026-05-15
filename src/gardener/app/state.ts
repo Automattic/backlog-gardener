@@ -68,6 +68,7 @@ export interface AppStateStore {
   enqueueJob(args: EnqueueJobArgs): AppJobRecord;
   listJobs(): AppJobRecord[];
   startJob(jobId: string): void;
+  scheduleJobRetry(jobId: string, nextRunAt: string, error?: string | null): void;
   completeJob(jobId: string, status: 'completed' | 'failed' | 'skipped' | 'dead_letter', error?: string | null): void;
   startRun(args: StartRunArgs): AppRunRecord;
   completeRun(runId: string, status: 'completed' | 'failed' | 'skipped', error?: string | null): void;
@@ -157,6 +158,13 @@ export class InMemoryAppStateStore implements AppStateStore {
     const record = this.jobs.get(jobId);
     if (record)
       this.jobs.set(jobId, { ...record, status: 'processing', attempts: record.attempts + 1, startedAt: nowIso() });
+  }
+
+  scheduleJobRetry(jobId: string, nextRunAt: string, error: string | null = null): void {
+    const record = this.jobs.get(jobId);
+    if (record) {
+      this.jobs.set(jobId, { ...record, status: 'queued', nextRunAt, completedAt: null, error });
+    }
   }
 
   completeJob(
@@ -491,6 +499,12 @@ export class SqliteAppStateStore implements AppStateStore {
     this.db
       .prepare('UPDATE app_jobs SET status = ?, attempts = attempts + 1, started_at = ? WHERE id = ?')
       .run('processing', nowIso(), jobId);
+  }
+
+  scheduleJobRetry(jobId: string, nextRunAt: string, error: string | null = null): void {
+    this.db
+      .prepare('UPDATE app_jobs SET status = ?, next_run_at = ?, completed_at = NULL, error = ? WHERE id = ?')
+      .run('queued', nextRunAt, error, jobId);
   }
 
   completeJob(
