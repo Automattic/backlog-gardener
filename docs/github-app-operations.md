@@ -114,7 +114,30 @@ Command behavior:
 - `rerun` runs the latest recipe previously used on the thread.
 - `explain` posts the latest persisted investigation summary for the thread.
 
-## 4. Inspect artifacts locally
+## 4. Inspect jobs locally
+
+Webhook deliveries are persisted as app jobs before processing. Inspect them when debugging webhook delivery, retries, skipped work, or dead-lettered failures:
+
+```sh
+pnpm gardener github-app jobs list \
+  --state .gardener-state/app.db
+
+pnpm gardener github-app jobs list \
+  --state .gardener-state/app.db \
+  --repo owner/repo \
+  --status dead_letter
+```
+
+Jobs include attempt counters and any scheduled `nextRunAt` retry time. Manually requeue a failed or dead-letter job after inspecting the failure:
+
+```sh
+pnpm gardener github-app jobs retry <job-id> \
+  --state .gardener-state/app.db
+```
+
+Manual retries preserve the attempt count so repeated failures remain visible in the job history.
+
+## 5. Inspect artifacts locally
 
 All issue, PR, and manual investigation results are persisted in SQLite.
 
@@ -129,7 +152,7 @@ pnpm gardener github-app investigations show <artifact-id> \
 
 Use artifacts to debug skipped comments, suppressed issue triage, manual command outputs, and synthesized conclusions.
 
-## 5. Safety model
+## 6. Safety model
 
 Gardener favors explicit opt-in and low-risk defaults:
 
@@ -143,7 +166,7 @@ Gardener favors explicit opt-in and low-risk defaults:
 - Obvious secret/env dumping and curl-pipe-shell commands are rejected during config parsing.
 - Concurrent manual investigations for the same issue/PR are locked to avoid duplicate runs and comment spam.
 
-## 6. Local development loop
+## 7. Local development loop
 
 For local webhook testing:
 
