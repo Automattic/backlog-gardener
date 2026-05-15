@@ -2,15 +2,12 @@ import { exec } from 'node:child_process';
 import { promisify } from 'node:util';
 
 import type { GitHubAppConfig } from './config.js';
-import type { GitHubAppClient } from './publisher.js';
 import type { AppInvestigationArtifactRecord, RepoRef } from './types.js';
 
 const execAsync = promisify(exec);
 const TRUSTED_ASSOCIATIONS = new Set(['OWNER', 'MEMBER', 'COLLABORATOR']);
 
-export interface ManualInvestigationCommand {
-  recipeName: string;
-}
+export type ManualInvestigationCommand = { type: 'help' } | { type: 'run_recipe'; recipeName: string };
 
 export interface ManualInvestigationCommandPayload {
   action?: string;
@@ -31,7 +28,6 @@ export interface ManualInvestigationResult {
   recipeName: string;
   description: string;
   commands: ManualCommandResult[];
-  body: string;
 }
 
 export interface ManualCommandResult {
@@ -43,9 +39,11 @@ export interface ManualCommandResult {
 }
 
 export function parseManualInvestigationCommand(body: string): ManualInvestigationCommand | null {
-  const match = body.match(/^\s*@gardener\s+(?:(investigate)|run\s+recipe\s+([A-Za-z0-9_.-]+))\b/im);
-  if (!match) return null;
-  return { recipeName: match[2] ?? 'default' };
+  const helpMatch = body.match(/^\s*@gardener\s+help\b/im);
+  if (helpMatch) return { type: 'help' };
+  const runMatch = body.match(/^\s*@gardener\s+(?:(investigate)|run\s+recipe\s+([A-Za-z0-9_.-]+))\b/im);
+  if (!runMatch) return null;
+  return { type: 'run_recipe', recipeName: runMatch[2] ?? 'default' };
 }
 
 export function manualInvestigationCommandAllowed(payload: ManualInvestigationCommandPayload): boolean {
@@ -59,9 +57,8 @@ export async function runManualInvestigation(args: {
   payload: ManualInvestigationCommandPayload;
   config: GitHubAppConfig;
   repo: RepoRef;
-  client: GitHubAppClient;
   checkoutPath: string;
-  command: ManualInvestigationCommand;
+  command: Extract<ManualInvestigationCommand, { type: 'run_recipe' }>;
 }): Promise<ManualInvestigationResult> {
   const issueNumber = args.payload.issue?.number;
   if (!issueNumber) throw new Error('manual investigation command is missing issue context');
@@ -87,14 +84,7 @@ export async function runManualInvestigation(args: {
     recipeName: requestedRecipe,
     description: recipe.description,
     commands,
-    body: renderManualInvestigationComment({ recipeName: requestedRecipe, description: recipe.description, commands }),
   };
-  await args.client.createIssueComment({
-    owner: args.repo.owner,
-    repo: args.repo.repo,
-    issueNumber,
-    body: result.body,
-  });
   return result;
 }
 
@@ -135,10 +125,51 @@ async function runCommand(args: {
   }
 }
 
-function renderManualInvestigationComment(args: {
+export function renderManualInvestigationHelp(config: GitHubAppConfig): string {
+  const recipes = Object.entries(config.investigation.recipes);
+  const lines = [
+    '🌱 **Backlog Gardener help**',
+    '',
+    'Trusted maintainers can trigger manual investigations with:',
+    '',
+    '- `@gardener investigate` — run the default recipe',
+    '- `@gardener run recipe <name>` — run a named recipe',
+    '- `@gardener help` — show this help',
+    '',
+    `Default recipe: \`${config.investigation.defaultRecipe}\``,
+    '',
+    '## Available recipes',
+  ];
+  if (recipes.length === 0) {
+    lines.push('', 'No investigation recipes are configured in `.github/gardener.yml`.');
+  } else {
+    for (const [name, recipe] of recipes) {
+      lines.push('', `- \`${name}\`${recipe.description ? ` — ${recipe.description}` : ''}`);
+    }
+  }
+  return lines.join('\n');
+}
+
+export function renderUnknownRecipeComment(config: GitHubAppConfig, recipeName: string): string {
+  const recipes = Object.keys(config.investigation.recipes).sort();
+  return [
+    '🌱 **Backlog Gardener manual investigation**',
+    '',
+    `Unknown recipe: \`${recipeName}\`.`,
+    '',
+    recipes.length > 0
+      ? `Available recipes: ${recipes.map((recipe) => `\`${recipe}\``).join(', ')}`
+      : 'No recipes are configured.',
+    '',
+    'Run `@gardener help` for usage.',
+  ].join('\n');
+}
+
+export function renderManualInvestigationComment(args: {
   recipeName: string;
   description: string;
   commands: ManualCommandResult[];
+  artifactId?: string;
 }): string {
   const lines = [
     '🌱 **Backlog Gardener manual investigation**',
@@ -146,6 +177,7 @@ function renderManualInvestigationComment(args: {
     '_Automated run triggered by a trusted maintainer command._',
     '',
     `Recipe: \`${args.recipeName}\`${args.description ? ` — ${args.description}` : ''}`,
+    args.artifactId ? `Artifact: \`${args.artifactId}\`` : null,
     '',
     '## Command results',
   ];
@@ -157,7 +189,7 @@ function renderManualInvestigationComment(args: {
     if (result.stderr.trim()) lines.push('', '**stderr**', '```text', result.stderr.trim(), '```');
   }
   lines.push('', '<!-- backlog-gardener:summary:v1 -->');
-  return lines.join('\n');
+  return lines.filter((line): line is string => line !== null).join('\n');
 }
 
 function safeCommandEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {

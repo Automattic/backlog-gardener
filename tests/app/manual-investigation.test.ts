@@ -8,9 +8,11 @@ import { parseGitHubAppConfig } from '../../src/gardener/app/config.js';
 import {
   manualInvestigationCommandAllowed,
   parseManualInvestigationCommand,
+  renderManualInvestigationComment,
+  renderManualInvestigationHelp,
+  renderUnknownRecipeComment,
   runManualInvestigation,
 } from '../../src/gardener/app/manual-investigation.js';
-import type { GitHubAppClient, GitHubCommentSummary } from '../../src/gardener/app/publisher.js';
 
 const tempDirs: string[] = [];
 
@@ -20,8 +22,15 @@ afterEach(async () => {
 
 describe('manual investigation commands', () => {
   it('parses supported commands', () => {
-    expect(parseManualInvestigationCommand('@gardener investigate')?.recipeName).toBe('default');
-    expect(parseManualInvestigationCommand('@gardener run recipe docs-check')?.recipeName).toBe('docs-check');
+    expect(parseManualInvestigationCommand('@gardener help')).toEqual({ type: 'help' });
+    expect(parseManualInvestigationCommand('@gardener investigate')).toEqual({
+      type: 'run_recipe',
+      recipeName: 'default',
+    });
+    expect(parseManualInvestigationCommand('@gardener run recipe docs-check')).toEqual({
+      type: 'run_recipe',
+      recipeName: 'docs-check',
+    });
     expect(parseManualInvestigationCommand('hello')).toBeNull();
   });
 
@@ -46,30 +55,27 @@ describe('manual investigation commands', () => {
     ).toBe(false);
   });
 
-  it('runs a configured recipe and posts the result', async () => {
+  it('renders help and unknown recipe comments', () => {
+    const config = parseGitHubAppConfig(`
+investigation:
+  defaultRecipe: docs-check
+  recipes:
+    docs-check:
+      description: Check docs.
+      commands:
+        - echo ok
+`);
+
+    expect(renderManualInvestigationHelp(config)).toContain('@gardener run recipe <name>');
+    expect(renderManualInvestigationHelp(config)).toContain('`docs-check` — Check docs.');
+    expect(renderUnknownRecipeComment(config, 'missing')).toContain('Unknown recipe: `missing`');
+    expect(renderUnknownRecipeComment(config, 'missing')).toContain('`docs-check`');
+  });
+
+  it('runs a configured recipe and renders the result with an artifact id', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'gardener-manual-'));
     tempDirs.push(dir);
     await writeFile(join(dir, 'package.json'), JSON.stringify({ scripts: { check: 'node -e "console.log(42)"' } }));
-    const comments: GitHubCommentSummary[] = [];
-    const client: GitHubAppClient = {
-      async listIssues() {
-        return [];
-      },
-      async createIssue() {
-        throw new Error('not used');
-      },
-      async listIssueComments() {
-        return [];
-      },
-      async createIssueComment(args) {
-        const comment = { id: 1, body: args.body };
-        comments.push(comment);
-        return comment;
-      },
-      async updateIssueComment() {
-        throw new Error('not used');
-      },
-    };
 
     const result = await runManualInvestigation({
       payload: {
@@ -85,13 +91,19 @@ investigation:
         - node -e "console.log(42)"
 `),
       repo: { installationId: 1, owner: 'o', repo: 'r', fullName: 'o/r' },
-      client,
       checkoutPath: dir,
-      command: { recipeName: 'docs-check' },
+      command: { type: 'run_recipe', recipeName: 'docs-check' },
     });
 
+    const body = renderManualInvestigationComment({
+      recipeName: result.recipeName,
+      description: result.description,
+      commands: result.commands,
+      artifactId: 'app_inv_123',
+    });
     expect(result.commands[0]).toEqual(expect.objectContaining({ exitCode: 0, stdout: expect.stringContaining('42') }));
-    expect(comments[0]?.body).toContain('Backlog Gardener manual investigation');
-    expect(comments[0]?.body).toContain('node -e');
+    expect(body).toContain('Backlog Gardener manual investigation');
+    expect(body).toContain('Artifact: `app_inv_123`');
+    expect(body).toContain('node -e');
   });
 });
