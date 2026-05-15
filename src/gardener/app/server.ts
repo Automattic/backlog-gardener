@@ -15,6 +15,9 @@ import { enrichDecisionWithInvestigationResult } from './investigation.js';
 import {
   manualInvestigationCommandAllowed,
   parseManualInvestigationCommand,
+  renderManualInvestigationComment,
+  renderManualInvestigationHelp,
+  renderUnknownRecipeComment,
   runManualInvestigation,
 } from './manual-investigation.js';
 import { buildWebhookDecisionLogEntry, writeStructuredLog } from './logging.js';
@@ -215,6 +218,41 @@ export function startGitHubAppServer(options: AppServerOptions): ReturnType<type
         return;
       }
       try {
+        if (command.type === 'help') {
+          await args.loaded.client.createIssueComment({
+            owner: repo.owner,
+            repo: repo.repo,
+            issueNumber: args.payload.issue!.number!,
+            body: renderManualInvestigationHelp(args.config),
+          });
+          state.completeJob(args.jobId, 'completed');
+          writeStructuredLog({
+            event: 'github_manual_investigation_help_posted',
+            deliveryId: args.deliveryId,
+            jobId: args.jobId,
+            repo: repo.fullName,
+          });
+          return;
+        }
+        const requestedRecipe =
+          command.recipeName === 'default' ? args.config.investigation.defaultRecipe : command.recipeName;
+        if (!args.config.investigation.recipes[requestedRecipe]) {
+          await args.loaded.client.createIssueComment({
+            owner: repo.owner,
+            repo: repo.repo,
+            issueNumber: args.payload.issue!.number!,
+            body: renderUnknownRecipeComment(args.config, requestedRecipe),
+          });
+          state.completeJob(args.jobId, 'completed');
+          writeStructuredLog({
+            event: 'github_manual_investigation_unknown_recipe',
+            deliveryId: args.deliveryId,
+            jobId: args.jobId,
+            repo: repo.fullName,
+            recipeName: requestedRecipe,
+          });
+          return;
+        }
         const checkout = ensureAppRepoCheckout({
           owner: repo.owner,
           repo: repo.repo,
@@ -224,7 +262,6 @@ export function startGitHubAppServer(options: AppServerOptions): ReturnType<type
           payload: args.payload,
           config: args.config,
           repo,
-          client: args.loaded.client,
           checkoutPath: checkout.path,
           command,
         });
@@ -236,14 +273,28 @@ export function startGitHubAppServer(options: AppServerOptions): ReturnType<type
           subjectNumber: result.subjectNumber,
           status: result.subjectType === 'issue' ? 'comment_ready' : 'review_ready',
           publicationStatus: 'published',
-          generatedBody: result.body,
+          generatedBody: null,
           details: {
             manualCommand: args.payload.comment?.body ?? '',
+            commandAuthor: args.payload.comment?.user?.login ?? null,
             recipeName: result.recipeName,
             description: result.description,
             commands: result.commands,
           },
         });
+        const body = renderManualInvestigationComment({
+          recipeName: result.recipeName,
+          description: result.description,
+          commands: result.commands,
+          artifactId: artifact.id,
+        });
+        await args.loaded.client.createIssueComment({
+          owner: repo.owner,
+          repo: repo.repo,
+          issueNumber: result.subjectNumber,
+          body,
+        });
+        state.updateInvestigationPublication(artifact.id, 'published');
         state.completeJob(args.jobId, 'completed');
         writeStructuredLog({
           event: 'github_manual_investigation_completed',
