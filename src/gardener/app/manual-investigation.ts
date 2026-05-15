@@ -9,7 +9,10 @@ import type { AppInvestigationArtifactRecord, RepoRef } from './types.js';
 const execAsync = promisify(exec);
 const TRUSTED_ASSOCIATIONS = new Set(['OWNER', 'MEMBER', 'COLLABORATOR']);
 
-export type ManualInvestigationCommand = { type: 'help' } | { type: 'run_recipe'; recipeName: string };
+export type ManualInvestigationCommand =
+  | { type: 'help' }
+  | { type: 'list_recipes' }
+  | { type: 'run_recipe'; recipeName: string };
 
 export interface ManualInvestigationCommandPayload {
   action?: string;
@@ -50,7 +53,9 @@ export interface ManualInvestigationSynthesis {
 export function parseManualInvestigationCommand(body: string): ManualInvestigationCommand | null {
   const helpMatch = body.match(/^\s*@gardener\s+help\b/im);
   if (helpMatch) return { type: 'help' };
-  const runMatch = body.match(/^\s*@gardener\s+(?:(investigate)|run\s+recipe\s+([A-Za-z0-9_.-]+))\b/im);
+  const listMatch = body.match(/^\s*@gardener\s+list\s+recipes\b/im);
+  if (listMatch) return { type: 'list_recipes' };
+  const runMatch = body.match(/^\s*@gardener\s+(?:(investigate)|reproduce|run\s+recipe\s+([A-Za-z0-9_.-]+))\b/im);
   if (!runMatch) return null;
   return { type: 'run_recipe', recipeName: runMatch[2] ?? 'default' };
 }
@@ -175,20 +180,25 @@ export function fallbackManualInvestigationSynthesis(result: ManualInvestigation
 }
 
 export function renderManualInvestigationHelp(config: GitHubAppConfig): string {
-  const recipes = Object.entries(config.investigation.recipes);
   const lines = [
     '🌱 **Backlog Gardener help**',
     '',
     'Trusted maintainers can trigger manual investigations with:',
     '',
     '- `@gardener investigate` — run the default recipe',
+    '- `@gardener reproduce` — alias for the default recipe',
     '- `@gardener run recipe <name>` — run a named recipe',
+    '- `@gardener list recipes` — list configured recipes',
     '- `@gardener help` — show this help',
     '',
-    `Default recipe: \`${config.investigation.defaultRecipe}\``,
-    '',
-    '## Available recipes',
+    renderRecipeList(config),
   ];
+  return lines.join('\n');
+}
+
+export function renderRecipeList(config: GitHubAppConfig): string {
+  const recipes = Object.entries(config.investigation.recipes);
+  const lines = [`Default recipe: \`${config.investigation.defaultRecipe}\``, '', '## Available recipes'];
   if (recipes.length === 0) {
     lines.push('', 'No investigation recipes are configured in `.github/gardener.yml`.');
   } else {

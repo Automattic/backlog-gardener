@@ -18,6 +18,7 @@ import {
   parseManualInvestigationCommand,
   renderManualInvestigationComment,
   renderManualInvestigationHelp,
+  renderRecipeList,
   renderUnknownRecipeComment,
   runManualInvestigation,
   synthesizeManualInvestigation,
@@ -220,16 +221,19 @@ export function startGitHubAppServer(options: AppServerOptions): ReturnType<type
         return;
       }
       try {
-        if (command.type === 'help') {
+        if (command.type === 'help' || command.type === 'list_recipes') {
           await args.loaded.client.createIssueComment({
             owner: repo.owner,
             repo: repo.repo,
             issueNumber: args.payload.issue!.number!,
-            body: renderManualInvestigationHelp(args.config),
+            body: command.type === 'help' ? renderManualInvestigationHelp(args.config) : renderRecipeList(args.config),
           });
           state.completeJob(args.jobId, 'completed');
           writeStructuredLog({
-            event: 'github_manual_investigation_help_posted',
+            event:
+              command.type === 'help'
+                ? 'github_manual_investigation_help_posted'
+                : 'github_manual_investigation_recipes_listed',
             deliveryId: args.deliveryId,
             jobId: args.jobId,
             repo: repo.fullName,
