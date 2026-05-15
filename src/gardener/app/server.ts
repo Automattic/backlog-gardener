@@ -29,8 +29,9 @@ import { evaluateDecisionPolicy } from './policy.js';
 import { publishDecision } from './publisher.js';
 import { runScheduledReportSweep } from './scheduler.js';
 import { SqliteAppStateStore } from './state.js';
-import type { AppDecision, RepoRef } from './types.js';
+import type { AppDecision, AppJobRecord, RepoRef } from './types.js';
 import { handleGitHubWebhook } from './webhooks.js';
+import { runAppWorkerTick } from './worker.js';
 
 export interface AppServerOptions {
   port?: number;
@@ -92,10 +93,21 @@ export function startGitHubAppServer(options: AppServerOptions): ReturnType<type
           .writeHead(202, { 'content-type': 'application/json' })
           .end(JSON.stringify({ status: 'queued', jobId: job.id }));
         setImmediate(() => {
-          void processWebhookJob({ jobId: job.id, deliveryId, eventName, payload, config, loaded }).catch((error) => {
-            const message = error instanceof Error ? error.message : String(error);
-            state.completeJob(job.id, 'failed', message);
-            writeStructuredLog({ event: 'github_webhook_job_failed', deliveryId, jobId: job.id, error: message });
+          void runAppWorkerTick({
+            state,
+            limit: 1,
+            processJob: async (queuedJob: AppJobRecord) => {
+              await processWebhookJob({ jobId: queuedJob.id, deliveryId, eventName, payload, config, loaded });
+            },
+            onError: (failedJob, error) => {
+              const message = error instanceof Error ? error.message : String(error);
+              writeStructuredLog({
+                event: 'github_webhook_job_failed',
+                deliveryId: failedJob.deliveryId,
+                jobId: failedJob.id,
+                error: message,
+              });
+            },
           });
         });
       } catch (error) {
