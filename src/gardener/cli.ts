@@ -12,6 +12,7 @@ import {
   renderInvestigationArtifact,
   renderInvestigationArtifactList,
 } from './app/investigation-artifacts.js';
+import { readAppJobs, renderAppJobList } from './app/jobs.js';
 import {
   buildGitHubAppManifest,
   buildGitHubOrgAppManifestUrl,
@@ -332,6 +333,45 @@ export function buildProgram(deps: CliDependencies = {}): Command {
         opts.json ? `${JSON.stringify(artifact, null, 2)}\n` : renderInvestigationArtifact(artifact),
       );
     });
+
+  const jobs = githubApp.command('jobs').description('inspect queued and completed GitHub App jobs');
+
+  jobs
+    .command('list')
+    .description('list persisted webhook jobs')
+    .option(
+      '--state <path>',
+      'GitHub App SQLite state path',
+      process.env.GARDENER_APP_STATE_PATH ?? '.gardener-state/app.db',
+    )
+    .option('--repo <owner/repo>', 'filter by repository')
+    .addOption(
+      new Option('--status <status>', 'filter by job status').choices([
+        'queued',
+        'processing',
+        'completed',
+        'failed',
+        'skipped',
+      ]),
+    )
+    .option('--limit <count>', 'maximum number of jobs to show', (value) => Number.parseInt(value, 10), 20)
+    .option('--json', 'emit machine-readable JSON')
+    .action(
+      (opts: {
+        state: string;
+        repo?: string;
+        status?: 'queued' | 'processing' | 'completed' | 'failed' | 'skipped';
+        limit: number;
+        json?: boolean;
+      }) => {
+        const jobs = readAppJobs(opts.state, {
+          ...(opts.repo ? { repo: opts.repo } : {}),
+          ...(opts.status ? { status: opts.status } : {}),
+          limit: opts.limit,
+        });
+        process.stdout.write(opts.json ? `${JSON.stringify(jobs, null, 2)}\n` : renderAppJobList(jobs));
+      },
+    );
 
   const feedback = program.command('feedback').description('record or import human review feedback');
 
