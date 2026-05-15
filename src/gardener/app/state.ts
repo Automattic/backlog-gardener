@@ -66,6 +66,7 @@ export interface AppStateStore {
   hasProcessedDelivery(deliveryId: string): boolean;
   recordDelivery(deliveryId: string): void;
   enqueueJob(args: EnqueueJobArgs): AppJobRecord;
+  listJobs(): AppJobRecord[];
   startJob(jobId: string): void;
   completeJob(jobId: string, status: 'completed' | 'failed' | 'skipped', error?: string | null): void;
   startRun(args: StartRunArgs): AppRunRecord;
@@ -143,6 +144,10 @@ export class InMemoryAppStateStore implements AppStateStore {
     };
     this.jobs.set(record.id, record);
     return record;
+  }
+
+  listJobs(): AppJobRecord[] {
+    return [...this.jobs.values()].sort((a, b) => a.createdAt.localeCompare(b.createdAt));
   }
 
   startJob(jobId: string): void {
@@ -446,6 +451,13 @@ export class SqliteAppStateStore implements AppStateStore {
         record.error,
       );
     return record;
+  }
+
+  listJobs(): AppJobRecord[] {
+    const rows = this.db.prepare('SELECT * FROM app_jobs ORDER BY created_at ASC').all() as Array<
+      Record<string, unknown>
+    >;
+    return rows.map(jobFromRow);
   }
 
   startJob(jobId: string): void {
