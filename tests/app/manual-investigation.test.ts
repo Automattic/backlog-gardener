@@ -12,9 +12,30 @@ import {
   renderManualInvestigationHelp,
   renderUnknownRecipeComment,
   runManualInvestigation,
+  synthesizeManualInvestigation,
 } from '../../src/gardener/app/manual-investigation.js';
+import type { CompletionProvider } from '../../src/gardener/llm/provider.js';
 
 const tempDirs: string[] = [];
+
+class FakeProvider implements CompletionProvider {
+  readonly name = 'fake';
+  readonly model = 'fake';
+  readonly thinkingEffort = undefined;
+
+  async complete<T>(): Promise<{ output: T; model: string; usage: { inputTokens: number; outputTokens: number } }> {
+    return {
+      output: {
+        outcome: 'passed',
+        evidence: ['The validation command exited successfully.'],
+        nextStep: 'Use this as supporting evidence for triage.',
+        confidence: 'high',
+      } as T,
+      model: this.model,
+      usage: { inputTokens: 1, outputTokens: 1 },
+    };
+  }
+}
 
 afterEach(async () => {
   await Promise.all(tempDirs.splice(0).map((dir) => rm(dir, { recursive: true, force: true })));
@@ -87,6 +108,30 @@ investigation:
     expect(body).toContain('Commands: 1 passed, 1 failed, 1 timed out');
   });
 
+  it('synthesizes command output into a concise conclusion', async () => {
+    const synthesis = await synthesizeManualInvestigation({
+      provider: new FakeProvider(),
+      repo: 'o/r',
+      subject: 'issue #12',
+      result: {
+        repo: 'o/r',
+        subjectType: 'issue',
+        subjectNumber: 12,
+        recipeName: 'docs-check',
+        description: 'Check docs',
+        commands: [{ command: 'echo ok', exitCode: 0, timedOut: false, stdout: 'ok', stderr: '' }],
+      },
+    });
+
+    expect(synthesis).toEqual(
+      expect.objectContaining({
+        outcome: 'passed',
+        confidence: 'high',
+        evidence: ['The validation command exited successfully.'],
+      }),
+    );
+  });
+
   it('runs a configured recipe and renders the result with an artifact id', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'gardener-manual-'));
     tempDirs.push(dir);
@@ -114,6 +159,12 @@ investigation:
       recipeName: result.recipeName,
       description: result.description,
       commands: result.commands,
+      synthesis: {
+        outcome: 'passed',
+        evidence: ['The validation command exited successfully.'],
+        nextStep: 'Use this as supporting evidence for triage.',
+        confidence: 'high',
+      },
       artifactId: 'app_inv_123',
     });
     expect(result.commands[0]).toEqual(expect.objectContaining({ exitCode: 0, stdout: expect.stringContaining('42') }));
@@ -121,6 +172,8 @@ investigation:
     expect(body).toContain('Artifact: `app_inv_123`');
     expect(body).toContain('Outcome: **passed**');
     expect(body).toContain('Commands: 1 passed, 0 failed, 0 timed out');
+    expect(body).toContain('Conclusion: **passed** (high confidence)');
+    expect(body).toContain('The validation command exited successfully.');
     expect(body).toContain('node -e');
   });
 });

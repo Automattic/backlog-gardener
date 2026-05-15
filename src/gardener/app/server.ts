@@ -13,12 +13,14 @@ import { fetchRepoGitHubAppConfig, GitHubRestAppClient } from './github-client.j
 import { createInstallationToken, verifyGitHubWebhookSignature } from './github-app.js';
 import { enrichDecisionWithInvestigationResult } from './investigation.js';
 import {
+  fallbackManualInvestigationSynthesis,
   manualInvestigationCommandAllowed,
   parseManualInvestigationCommand,
   renderManualInvestigationComment,
   renderManualInvestigationHelp,
   renderUnknownRecipeComment,
   runManualInvestigation,
+  synthesizeManualInvestigation,
 } from './manual-investigation.js';
 import { buildWebhookDecisionLogEntry, writeStructuredLog } from './logging.js';
 import { evaluateDecisionPolicy } from './policy.js';
@@ -306,6 +308,23 @@ export function startGitHubAppServer(options: AppServerOptions): ReturnType<type
             checkoutPath: checkout.path,
             command,
           });
+          let synthesis = fallbackManualInvestigationSynthesis(result);
+          try {
+            synthesis = await synthesizeManualInvestigation({
+              provider: createAppCompletionProvider(args.config),
+              repo: repo.fullName,
+              subject: `${result.subjectType} #${result.subjectNumber}`,
+              result,
+            });
+          } catch (error) {
+            writeStructuredLog({
+              event: 'github_manual_investigation_synthesis_failed',
+              deliveryId: args.deliveryId,
+              jobId: args.jobId,
+              repo: repo.fullName,
+              error: error instanceof Error ? error.message : String(error),
+            });
+          }
           const artifact = state.recordInvestigationArtifact({
             jobId: args.jobId,
             deliveryId: args.deliveryId,
@@ -320,6 +339,7 @@ export function startGitHubAppServer(options: AppServerOptions): ReturnType<type
               commandAuthor: args.payload.comment?.user?.login ?? null,
               recipeName: result.recipeName,
               description: result.description,
+              synthesis,
               commands: result.commands,
             },
           });
@@ -327,6 +347,7 @@ export function startGitHubAppServer(options: AppServerOptions): ReturnType<type
             recipeName: result.recipeName,
             description: result.description,
             commands: result.commands,
+            synthesis,
             artifactId: artifact.id,
           });
           await args.loaded.client.createIssueComment({

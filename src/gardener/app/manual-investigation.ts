@@ -1,6 +1,8 @@
 import { exec } from 'node:child_process';
 import { promisify } from 'node:util';
 
+import { loadPromptSchema } from '../llm/prompts.js';
+import type { CompletionProvider } from '../llm/provider.js';
 import type { GitHubAppConfig } from './config.js';
 import type { AppInvestigationArtifactRecord, RepoRef } from './types.js';
 
@@ -36,6 +38,13 @@ export interface ManualCommandResult {
   timedOut: boolean;
   stdout: string;
   stderr: string;
+}
+
+export interface ManualInvestigationSynthesis {
+  outcome: 'reproduced' | 'not_reproduced' | 'inconclusive' | 'passed' | 'failed';
+  evidence: string[];
+  nextStep: string;
+  confidence: 'low' | 'medium' | 'high';
 }
 
 export function parseManualInvestigationCommand(body: string): ManualInvestigationCommand | null {
@@ -125,6 +134,46 @@ async function runCommand(args: {
   }
 }
 
+export async function synthesizeManualInvestigation(args: {
+  provider: CompletionProvider;
+  repo: string;
+  subject: string;
+  result: ManualInvestigationResult;
+}): Promise<ManualInvestigationSynthesis> {
+  const schema = await loadPromptSchema('app-manual-investigation');
+  const response = await args.provider.complete<ManualInvestigationSynthesis>({
+    promptId: 'app-manual-investigation',
+    promptVersion: 'v1',
+    inputs: {
+      repo: args.repo,
+      subject: args.subject,
+      recipeName: args.result.recipeName,
+      description: args.result.description,
+      commands: renderCommandResultsForPrompt(args.result.commands),
+    },
+    schema,
+    maxTokens: 800,
+    timeoutMs: 60_000,
+  });
+  return response.output;
+}
+
+export function fallbackManualInvestigationSynthesis(result: ManualInvestigationResult): ManualInvestigationSynthesis {
+  const outcome = summarizeManualInvestigationOutcome(result.commands);
+  return {
+    outcome: outcome.failed > 0 || outcome.timedOut > 0 ? 'failed' : 'passed',
+    evidence: [
+      `${outcome.passed} command(s) passed, ${outcome.failed} failed, ${outcome.timedOut} timed out.`,
+      ...result.commands.slice(0, 3).map((command) => `${command.command}: exit ${command.exitCode ?? 'unknown'}`),
+    ],
+    nextStep:
+      outcome.failed > 0 || outcome.timedOut > 0
+        ? 'Inspect the failing command output and update the issue or recipe with the next debugging step.'
+        : 'Use the passing command output as supporting evidence for the next triage step.',
+    confidence: 'medium',
+  };
+}
+
 export function renderManualInvestigationHelp(config: GitHubAppConfig): string {
   const recipes = Object.entries(config.investigation.recipes);
   const lines = [
@@ -169,6 +218,7 @@ export function renderManualInvestigationComment(args: {
   recipeName: string;
   description: string;
   commands: ManualCommandResult[];
+  synthesis?: ManualInvestigationSynthesis;
   artifactId?: string;
 }): string {
   const outcome = summarizeManualInvestigationOutcome(args.commands);
@@ -181,6 +231,12 @@ export function renderManualInvestigationComment(args: {
     args.artifactId ? `Artifact: \`${args.artifactId}\`` : null,
     `Outcome: **${outcome.label}**`,
     `Commands: ${outcome.passed} passed, ${outcome.failed} failed, ${outcome.timedOut} timed out`,
+    args.synthesis ? '' : null,
+    args.synthesis ? '## Synthesized conclusion' : null,
+    args.synthesis ? `Conclusion: **${args.synthesis.outcome}** (${args.synthesis.confidence} confidence)` : null,
+    args.synthesis ? `Next step: ${args.synthesis.nextStep}` : null,
+    args.synthesis ? '' : null,
+    ...(args.synthesis ? ['Evidence:', ...args.synthesis.evidence.map((item) => `- ${item}`)] : []),
     '',
     '## Command results',
   ];
@@ -193,6 +249,20 @@ export function renderManualInvestigationComment(args: {
   }
   lines.push('', '<!-- backlog-gardener:summary:v1 -->');
   return lines.filter((line): line is string => line !== null).join('\n');
+}
+
+function renderCommandResultsForPrompt(commands: ManualCommandResult[]): string {
+  return commands
+    .map((command) =>
+      [
+        `Command: ${command.command}`,
+        `Exit code: ${command.exitCode ?? 'unknown'}`,
+        `Timed out: ${command.timedOut ? 'yes' : 'no'}`,
+        command.stdout.trim() ? `stdout:\n${command.stdout.trim()}` : 'stdout: <empty>',
+        command.stderr.trim() ? `stderr:\n${command.stderr.trim()}` : 'stderr: <empty>',
+      ].join('\n'),
+    )
+    .join('\n\n---\n\n');
 }
 
 function summarizeManualInvestigationOutcome(commands: ManualCommandResult[]): {
