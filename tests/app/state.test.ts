@@ -63,6 +63,11 @@ describe('SqliteAppStateStore', () => {
     state.updateInvestigationPublication(artifact.id, 'published');
     expect(state.listInvestigationArtifacts(run.id)[0]?.publicationStatus).toBe('published');
 
+    expect(state.acquireInvestigationLock({ key: 'o/r:issue:2', owner: job.id })).toBe(true);
+    expect(state.acquireInvestigationLock({ key: 'o/r:issue:2', owner: 'other-job' })).toBe(false);
+    state.releaseInvestigationLock('o/r:issue:2', job.id);
+    expect(state.acquireInvestigationLock({ key: 'o/r:issue:2', owner: 'other-job' })).toBe(true);
+
     state.upsertBotComment({
       installationId: 1,
       repo: 'o/r',

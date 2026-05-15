@@ -273,57 +273,81 @@ export function startGitHubAppServer(options: AppServerOptions): ReturnType<type
           });
           return;
         }
-        const checkout = ensureAppRepoCheckout({
-          owner: repo.owner,
-          repo: repo.repo,
-          branch: process.env.GARDENER_APP_CHECKOUT_BRANCH ?? args.config.code.branch,
-        });
-        const result = await runManualInvestigation({
-          payload: args.payload,
-          config: args.config,
-          repo,
-          checkoutPath: checkout.path,
-          command,
-        });
-        const artifact = state.recordInvestigationArtifact({
-          jobId: args.jobId,
-          deliveryId: args.deliveryId,
-          repo: repo.fullName,
-          subjectType: result.subjectType,
-          subjectNumber: result.subjectNumber,
-          status: result.subjectType === 'issue' ? 'comment_ready' : 'review_ready',
-          publicationStatus: 'published',
-          generatedBody: null,
-          details: {
-            manualCommand: args.payload.comment?.body ?? '',
-            commandAuthor: args.payload.comment?.user?.login ?? null,
+        const subjectNumber = args.payload.issue!.number!;
+        const subjectType = args.payload.issue?.pull_request ? 'pull_request' : 'issue';
+        const lockKey = `${repo.fullName}:${subjectType}:${subjectNumber}`;
+        if (!state.acquireInvestigationLock({ key: lockKey, owner: args.jobId })) {
+          await args.loaded.client.createIssueComment({
+            owner: repo.owner,
+            repo: repo.repo,
+            issueNumber: subjectNumber,
+            body: '🌱 **Backlog Gardener manual investigation**\n\nA manual investigation is already running for this thread. Please wait for it to finish before starting another recipe.',
+          });
+          state.completeJob(args.jobId, 'skipped');
+          writeStructuredLog({
+            event: 'github_manual_investigation_skipped',
+            deliveryId: args.deliveryId,
+            jobId: args.jobId,
+            repo: repo.fullName,
+            reason: 'investigation_already_running',
+          });
+          return;
+        }
+        try {
+          const checkout = ensureAppRepoCheckout({
+            owner: repo.owner,
+            repo: repo.repo,
+            branch: process.env.GARDENER_APP_CHECKOUT_BRANCH ?? args.config.code.branch,
+          });
+          const result = await runManualInvestigation({
+            payload: args.payload,
+            config: args.config,
+            repo,
+            checkoutPath: checkout.path,
+            command,
+          });
+          const artifact = state.recordInvestigationArtifact({
+            jobId: args.jobId,
+            deliveryId: args.deliveryId,
+            repo: repo.fullName,
+            subjectType: result.subjectType,
+            subjectNumber: result.subjectNumber,
+            status: result.subjectType === 'issue' ? 'comment_ready' : 'review_ready',
+            publicationStatus: 'published',
+            generatedBody: null,
+            details: {
+              manualCommand: args.payload.comment?.body ?? '',
+              commandAuthor: args.payload.comment?.user?.login ?? null,
+              recipeName: result.recipeName,
+              description: result.description,
+              commands: result.commands,
+            },
+          });
+          const body = renderManualInvestigationComment({
             recipeName: result.recipeName,
             description: result.description,
             commands: result.commands,
-          },
-        });
-        const body = renderManualInvestigationComment({
-          recipeName: result.recipeName,
-          description: result.description,
-          commands: result.commands,
-          artifactId: artifact.id,
-        });
-        await args.loaded.client.createIssueComment({
-          owner: repo.owner,
-          repo: repo.repo,
-          issueNumber: result.subjectNumber,
-          body,
-        });
-        state.updateInvestigationPublication(artifact.id, 'published');
-        state.completeJob(args.jobId, 'completed');
-        writeStructuredLog({
-          event: 'github_manual_investigation_completed',
-          deliveryId: args.deliveryId,
-          jobId: args.jobId,
-          repo: repo.fullName,
-          investigationId: artifact.id,
-          recipeName: result.recipeName,
-        });
+            artifactId: artifact.id,
+          });
+          await args.loaded.client.createIssueComment({
+            owner: repo.owner,
+            repo: repo.repo,
+            issueNumber: result.subjectNumber,
+            body,
+          });
+          state.updateInvestigationPublication(artifact.id, 'published');
+          state.completeJob(args.jobId, 'completed');
+          writeStructuredLog({
+            event: 'github_manual_investigation_completed',
+            deliveryId: args.deliveryId,
+            jobId: args.jobId,
+            repo: repo.fullName,
+            investigationId: artifact.id,
+            recipeName: result.recipeName,
+          });
+        } finally {
+          state.releaseInvestigationLock(lockKey, args.jobId);
+        }
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
         const issueNumber = args.payload.issue?.number;

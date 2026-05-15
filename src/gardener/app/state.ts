@@ -55,6 +55,13 @@ export interface RecordInvestigationArtifactArgs {
   details: Record<string, unknown>;
 }
 
+export interface InvestigationLockArgs {
+  key: string;
+  owner: string;
+  ttlSeconds?: number;
+  now?: Date;
+}
+
 export interface AppStateStore {
   hasProcessedDelivery(deliveryId: string): boolean;
   recordDelivery(deliveryId: string): void;
@@ -68,6 +75,8 @@ export interface AppStateStore {
   recordInvestigationArtifact(args: RecordInvestigationArtifactArgs): AppInvestigationArtifactRecord;
   updateInvestigationPublication(id: string, status: AppPublicationStatus): void;
   listInvestigationArtifacts(runId?: string): AppInvestigationArtifactRecord[];
+  acquireInvestigationLock(args: InvestigationLockArgs): boolean;
+  releaseInvestigationLock(key: string, owner: string): void;
   upsertBotComment(record: BotCommentRecord): void;
   findBotComment(args: {
     installationId: number;
@@ -106,6 +115,7 @@ export class InMemoryAppStateStore implements AppStateStore {
   private investigations: AppInvestigationArtifactRecord[] = [];
   private botComments = new Map<string, BotCommentRecord>();
   private cooldowns = new Map<string, CooldownRecord>();
+  private investigationLocks = new Map<string, { owner: string; expiresAt: string }>();
   private reviewedPullRequests = new Set<string>();
 
   hasProcessedDelivery(deliveryId: string): boolean {
@@ -222,6 +232,23 @@ export class InMemoryAppStateStore implements AppStateStore {
     return this.investigations.filter((record) => !runId || record.runId === runId);
   }
 
+  acquireInvestigationLock(args: InvestigationLockArgs): boolean {
+    const now = args.now ?? new Date();
+    for (const [key, lock] of this.investigationLocks) {
+      if (new Date(lock.expiresAt).getTime() <= now.getTime()) this.investigationLocks.delete(key);
+    }
+    if (this.investigationLocks.has(args.key)) return false;
+    this.investigationLocks.set(args.key, {
+      owner: args.owner,
+      expiresAt: new Date(now.getTime() + (args.ttlSeconds ?? 1800) * 1000).toISOString(),
+    });
+    return true;
+  }
+
+  releaseInvestigationLock(key: string, owner: string): void {
+    if (this.investigationLocks.get(key)?.owner === owner) this.investigationLocks.delete(key);
+  }
+
   upsertBotComment(record: BotCommentRecord): void {
     this.botComments.set(botCommentKey(record), record);
   }
@@ -336,6 +363,12 @@ export class SqliteAppStateStore implements AppStateStore {
       );
       CREATE INDEX IF NOT EXISTS idx_app_investigations_run_id ON app_investigations(run_id);
       CREATE INDEX IF NOT EXISTS idx_app_investigations_subject ON app_investigations(repo, subject_type, subject_number);
+      CREATE TABLE IF NOT EXISTS app_investigation_locks (
+        lock_key TEXT PRIMARY KEY,
+        owner TEXT NOT NULL,
+        acquired_at TEXT NOT NULL,
+        expires_at TEXT NOT NULL
+      );
       CREATE TABLE IF NOT EXISTS app_bot_comments (
         installation_id INTEGER NOT NULL,
         repo TEXT NOT NULL,
@@ -569,6 +602,25 @@ export class SqliteAppStateStore implements AppStateStore {
         : this.db.prepare('SELECT * FROM app_investigations ORDER BY created_at ASC').all()
     ) as Array<Record<string, unknown>>;
     return rows.map(investigationArtifactFromRow);
+  }
+
+  acquireInvestigationLock(args: InvestigationLockArgs): boolean {
+    const now = args.now ?? new Date();
+    this.db.prepare('DELETE FROM app_investigation_locks WHERE expires_at <= ?').run(now.toISOString());
+    const expiresAt = new Date(now.getTime() + (args.ttlSeconds ?? 1800) * 1000).toISOString();
+    this.db
+      .prepare(
+        'INSERT OR IGNORE INTO app_investigation_locks (lock_key, owner, acquired_at, expires_at) VALUES (?, ?, ?, ?)',
+      )
+      .run(args.key, args.owner, now.toISOString(), expiresAt);
+    const row = this.db.prepare('SELECT owner FROM app_investigation_locks WHERE lock_key = ?').get(args.key) as
+      | { owner?: string }
+      | undefined;
+    return row?.owner === args.owner;
+  }
+
+  releaseInvestigationLock(key: string, owner: string): void {
+    this.db.prepare('DELETE FROM app_investigation_locks WHERE lock_key = ? AND owner = ?').run(key, owner);
   }
 
   upsertBotComment(record: BotCommentRecord): void {
