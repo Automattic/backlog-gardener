@@ -65,7 +65,8 @@ class FakeProvider implements CompletionProvider {
       },
       'app-pr-review': {
         summary: 'Generated PR review summary.',
-        riskAssessment: ['Risk one.'],
+        blockingRisks: ['Blocking risk one.'],
+        nonBlockingSuggestions: ['Suggestion one.'],
         verification: ['Run test one.'],
         questions: [],
       },
@@ -245,7 +246,7 @@ describe('app investigation generation', () => {
       }),
     ).resolves.toEqual({
       ...decision,
-      reviewBody: expect.stringContaining('## Risk assessment'),
+      reviewBody: expect.stringContaining('## Blocking risks'),
     });
   });
 
@@ -265,7 +266,7 @@ describe('app investigation generation', () => {
       config: DEFAULT_GITHUB_APP_CONFIG,
     });
 
-    expect(result.decision).toEqual({ ...decision, reviewBody: expect.stringContaining('## Risk assessment') });
+    expect(result.decision).toEqual({ ...decision, reviewBody: expect.stringContaining('## Blocking risks') });
     expect(result.artifact).toEqual(
       expect.objectContaining({
         subjectType: 'pull_request',
