@@ -244,7 +244,7 @@ async function repoInstallationChecks(args: {
     if (!tokenResponse.ok) continue;
     const token = (await tokenResponse.json()) as { token?: string };
     if (!token.token) continue;
-    const repoResponse = await args.fetchImpl(`${args.apiBaseUrl}/repos/${owner}/${repo}/installation`, {
+    const repoResponse = await args.fetchImpl(`${args.apiBaseUrl}/repos/${owner}/${repo}`, {
       headers: {
         Authorization: `Bearer ${token.token}`,
         Accept: 'application/vnd.github+json',
