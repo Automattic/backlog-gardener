@@ -14,6 +14,7 @@ describe('parseGitHubAppConfig', () => {
     expect(config.prReviews.liveMode).toBe(false);
     expect(config.prReviews.eventType).toBe('backlog-gardener.pr-review');
     expect(config.issues.comments.enabled).toBe(false);
+    expect(config.investigation.enabled).toBe(false);
   });
 
   it('parses repo-specific app config', () => {
@@ -38,6 +39,13 @@ issues:
   verifyWithCode: false
 actions:
   issueComments: true
+investigation:
+  enabled: true
+  defaultRecipe: docs-check
+  recipes:
+    docs-check:
+      commands:
+        - pnpm test
 prReviews:
   enabled: true
   liveMode: false
@@ -58,6 +66,8 @@ controls:
     expect(config.issues.comments.enabled).toBe(true);
     expect(config.issues.includeRelatedIssues).toBe(false);
     expect(config.actions.issueComments).toBe(true);
+    expect(config.investigation.enabled).toBe(true);
+    expect(config.investigation.defaultRecipe).toBe('docs-check');
     expect(config.prReviews.enabled).toBe(true);
     expect(config.prReviews.triggers.synchronize).toBe(true);
     expect(config.controls.ignoreLabels).toContain('needs-triage');
